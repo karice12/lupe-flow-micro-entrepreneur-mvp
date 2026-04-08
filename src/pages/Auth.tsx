@@ -24,7 +24,7 @@ const Auth = () => {
 
   const handleGoogle = () => {
     toast.success("Login com Google realizado!");
-    navigate("/dashboard");
+    navigate("/onboarding");
   };
 
   return (
