@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Zap, Check, Loader2, Star, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
+import { getAccessToken } from "@/lib/supabase";
 
 interface PremiumModalProps {
   open: boolean;
@@ -33,8 +34,12 @@ export function PremiumModal({ open, userId, onActivated, onClose }: PremiumModa
     setIsLoading(true);
     setInlineError(null);
     try {
+      const token = await getAccessToken();
+      if (!token) throw new Error("Sessão expirada. Faça login novamente.");
+
       const res = await fetch(`/api/usuario/${encodeURIComponent(userId)}/premium`, {
         method: "POST",
+        headers: { "Authorization": `Bearer ${token}` },
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));

@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Zap, Wallet, Receipt, ShieldCheck, ArrowRight, Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { LgpdFooter } from "@/components/LgpdFooter";
+import { getAccessToken } from "@/lib/supabase";
 
 const STEPS = [
   {
@@ -65,9 +66,15 @@ const Onboarding = () => {
 
     setIsSaving(true);
     try {
+      const token = await getAccessToken();
+      if (!token) throw new Error("Sessão expirada. Faça login novamente.");
+
       const res = await fetch(`/api/usuario/${encodeURIComponent(userId)}/metas`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
         body: JSON.stringify({
           salary_goal: salaryGoal,
           bills_goal: billsGoal,

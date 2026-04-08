@@ -29,4 +29,15 @@ export function getSupabaseClient(): Promise<SupabaseClient | null> {
   return _initPromise;
 }
 
+/**
+ * Returns the current session's access token, or null if not logged in.
+ * Used to attach Authorization: Bearer <token> headers to backend write calls.
+ */
+export async function getAccessToken(): Promise<string | null> {
+  const sb = await getSupabaseClient();
+  if (!sb) return null;
+  const { data } = await sb.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
 export type { RealtimeChannel };

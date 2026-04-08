@@ -1,6 +1,6 @@
 import os
 import logging
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
@@ -12,6 +12,7 @@ from backend.storage import (
     get_balances, save_balances, get_user_status, upsert_goals, save_consent,
     is_transaction_processed, log_transaction, get_recent_transactions, set_premium,
 )
+from backend.auth import get_token_user_id, assert_owns_resource
 
 load_dotenv()
 
@@ -82,7 +83,7 @@ def supabase_config():
     }
 
 
-# ─── User ────────────────────────────────────────────────────────────────────
+# ─── User (read-only — no JWT required) ──────────────────────────────────────
 
 @app.get("/usuario/{user_id}", response_model=UserStatusResponse)
 def check_usuario(user_id: str):
@@ -90,23 +91,46 @@ def check_usuario(user_id: str):
     return UserStatusResponse(**status)
 
 
+# ─── User goals (write — JWT required) ───────────────────────────────────────
+
 @app.post("/usuario/{user_id}/metas")
-def salvar_metas(user_id: str, req: UserGoalsRequest):
+def salvar_metas(
+    user_id: str,
+    req: UserGoalsRequest,
+    token_user_id: str = Depends(get_token_user_id),
+):
+    assert_owns_resource(token_user_id, user_id)
     if req.salary_goal <= 0 or req.bills_goal <= 0 or req.emergency_goal <= 0:
         raise HTTPException(status_code=422, detail="Todas as metas devem ser maiores que zero.")
     upsert_goals(user_id, req.salary_goal, req.bills_goal, req.emergency_goal)
     return {"message": "Metas salvas com sucesso."}
 
 
+# ─── LGPD consent (write — JWT required) ─────────────────────────────────────
+
 @app.post("/usuario/{user_id}/consent")
-def salvar_consent(user_id: str):
+def salvar_consent(
+    user_id: str,
+    token_user_id: str = Depends(get_token_user_id),
+):
+    assert_owns_resource(token_user_id, user_id)
     saved_to_db = save_consent(user_id)
     return {"message": "Consentimento LGPD registrado.", "persisted": saved_to_db}
 
 
+# ─── Premium activation (write — JWT required) ───────────────────────────────
+
 @app.post("/usuario/{user_id}/premium")
-def ativar_premium(user_id: str):
-    """Activates the premium plan. Creates the user row via UPSERT if it doesn't exist yet."""
+def ativar_premium(
+    user_id: str,
+    token_user_id: str = Depends(get_token_user_id),
+):
+    """
+    Activates the premium plan for the authenticated user.
+    JWT must belong to the same user_id in the path.
+    set_premium uses UPDATE if the row exists so balances are NEVER overwritten.
+    """
+    assert_owns_resource(token_user_id, user_id)
     try:
         set_premium(user_id, True)
         return {"message": "Assinatura Premium ativada com sucesso.", "is_premium": True}
@@ -118,12 +142,16 @@ def ativar_premium(user_id: str):
 
 
 @app.delete("/usuario/{user_id}/premium")
-def cancelar_premium(user_id: str):
+def cancelar_premium(
+    user_id: str,
+    token_user_id: str = Depends(get_token_user_id),
+):
+    assert_owns_resource(token_user_id, user_id)
     set_premium(user_id, False)
     return {"message": "Assinatura cancelada.", "is_premium": False}
 
 
-# ─── Balances ─────────────────────────────────────────────────────────────────
+# ─── Balances (read — no JWT required; isolated by user_id server-side) ──────
 
 @app.get("/saldos", response_model=PixResponse)
 def get_saldos(
@@ -152,7 +180,7 @@ def get_saldos(
     )
 
 
-# ─── Transactions feed ────────────────────────────────────────────────────────
+# ─── Transactions feed (read) ─────────────────────────────────────────────────
 
 @app.get("/transactions", response_model=TransactionsResponse)
 def get_transactions(
@@ -175,19 +203,17 @@ def get_transactions(
     return TransactionsResponse(transactions=items)
 
 
-# ─── Webhook — Open Finance entry point ───────────────────────────────────────
+# ─── Webhook — Open Finance entry point (server-to-server, no user JWT) ───────
 
 @app.post("/v1/webhook/pix", response_model=WebhookPixResponse)
 def webhook_pix(req: WebhookPixRequest, user_id: str = Query(default="usuario_teste")):
     """
     Simulates what Pluggy / Belvo / Open Finance would POST when a PIX is received.
-    Applies 30/50/20 split with overflow routing and logs the split in `transactions`.
-    Idempotent: if id_transacao_bancaria was already processed, returns 200 without reprocessing.
+    Server-to-server call — authenticated via Supabase service role on the backend side.
     """
     if req.valor <= 0:
         raise HTTPException(status_code=422, detail="O valor do Pix deve ser maior que zero.")
 
-    # ── Idempotency check ────────────────────────────────────────────────────
     if is_transaction_processed(req.id_transacao_bancaria):
         logger.info(f"Duplicate webhook ignored: {req.id_transacao_bancaria}")
         return WebhookPixResponse(
@@ -196,16 +222,10 @@ def webhook_pix(req: WebhookPixRequest, user_id: str = Query(default="usuario_te
             idempotent=True,
         )
 
-    # ── Get current balances ─────────────────────────────────────────────────
     balance = get_balances(user_id, {})
-
-    # ── Apply split ──────────────────────────────────────────────────────────
     balance, allocs = _apply_split(req.valor, balance)
-
-    # ── Persist new balances ─────────────────────────────────────────────────
     save_balances(user_id, balance)
 
-    # ── Log each allocation in transactions table ─────────────────────────────
     base_desc = req.descricao.strip() or "Pix Recebido"
 
     if allocs["alloc_salary"] > 0:
@@ -214,24 +234,12 @@ def webhook_pix(req: WebhookPixRequest, user_id: str = Query(default="usuario_te
             amount=allocs["alloc_salary"],
             category="salario",
             description=base_desc,
-            external_id=req.id_transacao_bancaria,   # idempotency anchor on first row
+            external_id=req.id_transacao_bancaria,
         )
-
     if allocs["alloc_bills"] > 0:
-        log_transaction(
-            user_id=user_id,
-            amount=allocs["alloc_bills"],
-            category="contas",
-            description=base_desc,
-        )
-
+        log_transaction(user_id=user_id, amount=allocs["alloc_bills"], category="contas", description=base_desc)
     if allocs["alloc_emergency"] > 0:
-        log_transaction(
-            user_id=user_id,
-            amount=allocs["alloc_emergency"],
-            category="reserva",
-            description=base_desc,
-        )
+        log_transaction(user_id=user_id, amount=allocs["alloc_emergency"], category="reserva", description=base_desc)
 
     logger.info(
         f"Webhook processed: user={user_id} valor={req.valor} "
@@ -250,10 +258,19 @@ def webhook_pix(req: WebhookPixRequest, user_id: str = Query(default="usuario_te
     )
 
 
-# ─── Pix simulator endpoint ───────────────────────────────────────────────────
+# ─── Pix real entry (write — JWT required) ────────────────────────────────────
 
 @app.post("/dividir-pix", response_model=PixResponse)
-def dividir_pix(req: PixRequest):
+def dividir_pix(
+    req: PixRequest,
+    token_user_id: str = Depends(get_token_user_id),
+):
+    """
+    Premium-only: persists a real PIX split to Supabase.
+    JWT must belong to the same user_id present in the request body.
+    """
+    assert_owns_resource(token_user_id, req.user_id)
+
     if req.valor_pix <= 0:
         raise HTTPException(status_code=400, detail="O valor do Pix deve ser maior que zero.")
 
@@ -265,7 +282,6 @@ def dividir_pix(req: PixRequest):
 
     balance = get_balances(req.user_id, defaults)
 
-    # Snapshot for rollback in case transaction logging fails
     old_salary    = balance.salary
     old_bills     = balance.bills
     old_emergency = balance.emergency
@@ -282,7 +298,6 @@ def dividir_pix(req: PixRequest):
         if allocs["alloc_emergency"] > 0:
             log_transaction(req.user_id, allocs["alloc_emergency"], "reserva", description)
     except Exception as exc:
-        # Atomic rollback: restore previous balance if log fails
         logger.error(f"Transaction log failed for {req.user_id}, rolling back: {exc}")
         try:
             balance.salary    = old_salary

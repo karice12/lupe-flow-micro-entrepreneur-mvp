@@ -68,14 +68,25 @@ def get_user_status(user_id: str) -> dict:
 
 
 def set_premium(user_id: str, value: bool) -> None:
-    """UPSERT is_premium. If the user row doesn't exist yet, creates it with safe defaults."""
+    """
+    Safely set is_premium for a user.
+    - If the row already exists: UPDATE only is_premium — balances are NEVER touched.
+    - If the row is new: INSERT with zeroed balances (safe because user has no data yet).
+    """
     sb = get_supabase()
     try:
-        # Single upsert — works whether or not the row already exists.
-        # Only is_premium is changed; existing balance columns are preserved
-        # because on_conflict only merges the listed columns.
-        res = sb.table("user_balances").upsert(
-            {
+        check = sb.table("user_balances").select("user_id").eq("user_id", user_id).limit(1).execute()
+
+        if check.data:
+            # Row exists — only flip is_premium, leave all balance/goal columns intact
+            sb.table("user_balances") \
+              .update({"is_premium": value}) \
+              .eq("user_id", user_id) \
+              .execute()
+            logger.info(f"set_premium UPDATE OK — user='{user_id}' is_premium={value}")
+        else:
+            # Brand-new user — safe to INSERT with zeroed defaults
+            sb.table("user_balances").insert({
                 "user_id":        user_id,
                 "is_premium":     value,
                 "salary":         0,
@@ -85,15 +96,12 @@ def set_premium(user_id: str, value: bool) -> None:
                 "bills_goal":     0,
                 "emergency_goal": 0,
                 "lgpd_accepted":  False,
-            },
-            on_conflict="user_id",
-            ignore_duplicates=False,
-        ).execute()
-        logger.info(f"set_premium upsert OK — user='{user_id}' is_premium={value} response={res.data}")
+            }).execute()
+            logger.info(f"set_premium INSERT OK — user='{user_id}' is_premium={value} (new row)")
+
     except HTTPException:
         raise
     except Exception as e:
-        # Log the full exception so we can see any RLS / UUID / constraint error
         logger.error(
             f"set_premium FAILED for user='{user_id}' is_premium={value} "
             f"error_type={type(e).__name__} detail={e}",

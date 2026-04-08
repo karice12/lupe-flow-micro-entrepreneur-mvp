@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ArrowDownLeft, Loader2, X, Sparkles, BadgeCheck, Zap } from "lucide-react";
 import { toast } from "sonner";
+import { getAccessToken } from "@/lib/supabase";
 
 export interface SimDeltas {
   salary: number;
@@ -76,9 +77,17 @@ export function PixSimulator({
     }
     setIsLoading(true);
     try {
+      const token = await getAccessToken();
+      if (!token) {
+        toast.error("Sessão expirada. Faça login novamente.");
+        return;
+      }
       const res = await fetch("/api/dividir-pix", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
         body: JSON.stringify({
           valor_pix:   valor,
           user_id:     userId,

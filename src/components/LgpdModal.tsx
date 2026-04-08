@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ShieldCheck, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { getAccessToken } from "@/lib/supabase";
 
 interface LgpdModalProps {
   open: boolean;
@@ -41,8 +42,10 @@ export function LgpdModal({ open, userId, onAccepted }: LgpdModalProps) {
     if (!checked) return;
     setIsSaving(true);
     try {
+      const token = await getAccessToken();
       await fetch(`/api/usuario/${encodeURIComponent(userId)}/consent`, {
         method: "POST",
+        headers: token ? { "Authorization": `Bearer ${token}` } : {},
       });
     } catch {
       // non-blocking — localStorage fallback handles it
