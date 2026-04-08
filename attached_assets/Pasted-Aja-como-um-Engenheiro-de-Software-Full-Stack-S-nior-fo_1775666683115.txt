@@ -1,0 +1,23 @@
+Aja como um Engenheiro de Software Full-Stack Sênior focado em Deploy e Produção. Nosso objetivo final agora é deixar o projeto "Lupe Flow" 100% pronto para uso real e venda (Production Ready). Não faça alterações bruscas no design existente, foque no polimento e na robustez da integração.
+
+Aqui está o escopo definitivo de execução. Por favor, implemente, verifique e corrija os seguintes pontos passo a passo:
+
+1. Orquestração de Processos e Inicialização:
+- Revise o arquivo `.replit` e o script de inicialização principal (ex: `start.sh` ou similar).
+- Garanta que, ao dar "Run", o servidor FastAPI (Backend) e o servidor React (Frontend) iniciem simultaneamente, sem travar um ao outro, e permaneçam rodando.
+
+2. Consolidação Total do Backend e Supabase:
+- Faça uma varredura rigorosa no código e REMOVA definitivamente qualquer dado "mockado" (hardcoded). Tudo deve vir do banco.
+- Certifique-se de que TODAS as rotas do FastAPI (como `/dividir-pix` e a rota de resgatar saldos) estejam operando exclusivamente na tabela `user_balances` do Supabase.
+- Implemente tratamento de erros robusto. Se o banco falhar, o backend deve enviar um erro claro, e o frontend deve capturá-lo exibindo um aviso elegante ao usuário (ex: Toast notification), em vez de quebrar a tela.
+
+3. Sincronização de Estado e Fluxo de Usuário (UX):
+- Valide o fluxo inicial: Ao logar ou abrir a aplicação, verifique se o usuário já fez o onboarding. Se sim, leve-o direto para o Dashboard carregando os dados instantaneamente do Supabase.
+- UX do Botão: Bloqueie estritamente o botão "Simular Pix" (estado de loading/disabled) enquanto a requisição estiver a caminho do backend. Mude o texto para "Processando..." para evitar cliques duplos e inconsistência no banco de dados.
+
+4. Estética e Identidade (UI Polish):
+- Preserve o design atual: Dark Mode Premium.
+- Reforce a identidade visual garantindo que as chamadas de ação (CTAs) e botões principais usem a cor Laranja (#ff8c00 ou as classes `amber/orange` do Tailwind equivalentes).
+- Certifique-se de que o sistema pareça fluido e profissional.
+
+Missão Final: Deixe o projeto em um estado "Ready to Use". Eu preciso conseguir logar, atualizar metas e dividir PIXs de forma contínua sem tocar em mais nenhuma linha de configuração técnica. Me avise assim que todas essas verificações estiverem concluídas.

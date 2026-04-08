@@ -4,7 +4,8 @@ import { useGoals } from "@/contexts/GoalsContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { Zap, Wallet, Receipt, ShieldCheck, ArrowRight, Check } from "lucide-react";
+import { Zap, Wallet, Receipt, ShieldCheck, ArrowRight, Check, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
 const STEPS = [
   {
@@ -33,8 +34,9 @@ const STEPS = [
 const Onboarding = () => {
   const [step, setStep] = useState(0);
   const [values, setValues] = useState({ salary: "", bills: "", emergency: "" });
+  const [isSaving, setIsSaving] = useState(false);
   const navigate = useNavigate();
-  const { setGoals } = useGoals();
+  const { userId, setGoals } = useGoals();
 
   const current = STEPS[step];
   const isLast = step === STEPS.length - 1;
@@ -42,18 +44,43 @@ const Onboarding = () => {
 
   const parseValue = (v: string) => parseFloat(v.replace(/\./g, "").replace(",", ".")) || 0;
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (!values[current.key] || parseValue(values[current.key]) <= 0) return;
 
-    if (isLast) {
-      setGoals({
-        salary: parseValue(values.salary),
-        bills: parseValue(values.bills),
-        emergency: parseValue(values.emergency),
-      });
-      navigate("/dashboard");
-    } else {
+    if (!isLast) {
       setStep((s) => s + 1);
+      return;
+    }
+
+    const salaryGoal = parseValue(values.salary);
+    const billsGoal = parseValue(values.bills);
+    const emergencyGoal = parseValue(values.emergency);
+
+    setIsSaving(true);
+    try {
+      const res = await fetch(`/api/usuario/${encodeURIComponent(userId)}/metas`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          salary_goal: salaryGoal,
+          bills_goal: billsGoal,
+          emergency_goal: emergencyGoal,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Erro ao salvar metas.");
+      }
+
+      setGoals({ salary: salaryGoal, bills: billsGoal, emergency: emergencyGoal });
+      toast.success("Metas salvas! Abrindo seu caixa...");
+      navigate("/dashboard");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Erro ao conectar com o servidor.";
+      toast.error(message);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -83,7 +110,7 @@ const Onboarding = () => {
             <div
               key={s.key}
               className={`h-2.5 w-2.5 rounded-full transition-colors ${
-                i < step ? "bg-primary" : i === step ? "bg-primary" : "bg-muted"
+                i <= step ? "bg-primary" : "bg-muted"
               }`}
             />
           ))}
@@ -113,8 +140,9 @@ const Onboarding = () => {
               onChange={(e) =>
                 setValues((v) => ({ ...v, [current.key]: e.target.value }))
               }
-              onKeyDown={(e) => e.key === "Enter" && handleNext()}
+              onKeyDown={(e) => e.key === "Enter" && !isSaving && handleNext()}
               className="h-14 pl-11 text-xl font-bold rounded-xl bg-card border-border text-center"
+              disabled={isSaving}
             />
           </div>
 
@@ -122,10 +150,16 @@ const Onboarding = () => {
             variant="cta"
             size="lg"
             onClick={handleNext}
-            disabled={!values[current.key] || parseValue(values[current.key]) <= 0}
+            disabled={!values[current.key] || parseValue(values[current.key]) <= 0 || isSaving}
             className="w-full h-12 rounded-xl text-base gap-2"
+            data-testid="button-next"
           >
-            {isLast ? (
+            {isSaving ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Salvando...
+              </>
+            ) : isLast ? (
               <>
                 <Check className="h-5 w-5" />
                 Finalizar e Abrir meu Caixa
@@ -138,7 +172,7 @@ const Onboarding = () => {
             )}
           </Button>
 
-          {step > 0 && (
+          {step > 0 && !isSaving && (
             <button
               onClick={() => setStep((s) => s - 1)}
               className="text-sm text-muted-foreground hover:text-foreground transition-colors"

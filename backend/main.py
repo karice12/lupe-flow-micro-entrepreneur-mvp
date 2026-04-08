@@ -4,8 +4,8 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from backend.models import PixRequest, PixResponse, BoxBalance
-from backend.storage import get_balances, save_balances
+from backend.models import PixRequest, PixResponse, UserGoalsRequest, UserStatusResponse
+from backend.storage import get_balances, save_balances, get_user_status, upsert_goals
 
 load_dotenv()
 
@@ -26,6 +26,20 @@ app.add_middleware(
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/usuario/{user_id}", response_model=UserStatusResponse)
+def check_usuario(user_id: str):
+    status = get_user_status(user_id)
+    return UserStatusResponse(**status)
+
+
+@app.post("/usuario/{user_id}/metas")
+def salvar_metas(user_id: str, req: UserGoalsRequest):
+    if req.salary_goal <= 0 or req.bills_goal <= 0 or req.emergency_goal <= 0:
+        raise HTTPException(status_code=422, detail="Todas as metas devem ser maiores que zero.")
+    upsert_goals(user_id, req.salary_goal, req.bills_goal, req.emergency_goal)
+    return {"message": "Metas salvas com sucesso."}
 
 
 @app.get("/saldos", response_model=PixResponse)
@@ -58,7 +72,7 @@ def get_saldos(
 @app.post("/dividir-pix", response_model=PixResponse)
 def dividir_pix(req: PixRequest):
     if req.valor_pix <= 0:
-        raise HTTPException(status_code=422, detail="valor_pix deve ser maior que zero.")
+        raise HTTPException(status_code=422, detail="O valor do Pix deve ser maior que zero.")
 
     defaults = {
         "salary_goal": req.salary_goal or 3000.0,
@@ -88,7 +102,6 @@ def dividir_pix(req: PixRequest):
     allocated_salary = new_salary - balance.salary
     allocated_bills = new_bills - balance.bills
     allocated_emergency = base_emergency + overflow
-
     new_emergency = balance.emergency + allocated_emergency
 
     balance.salary = new_salary
