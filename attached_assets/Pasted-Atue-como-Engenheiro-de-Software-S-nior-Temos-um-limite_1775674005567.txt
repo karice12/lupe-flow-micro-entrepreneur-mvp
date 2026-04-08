@@ -1,0 +1,26 @@
+Atue como Engenheiro de Software Sênior. Temos um limite estrito de recursos, então seja cirúrgico. NÃO reescreva o que já está funcionando (especialmente o hook `useUserStats`, os Donut Charts e o rollback do backend).
+
+**OBJETIVO 1: Corrigir Bug da Assinatura Premium**
+1. **Backend:** No endpoint `POST /api/usuario/{id}/premium` (ou equivalente no seu backend Supabase/Node), garanta que ele faça um UPSERT na tabela `user_balances`. Se o usuário não existir na tabela, crie a linha com `is_premium: true`.
+2. **Logs:** Adicione `console.error` detalhado no catch desse endpoint.
+3. **Frontend:** No Modal de Assinatura, altere o tratamento de erro. Em vez de apenas "Falha ao ativar", exiba no Toast o erro real retornado pela API ou banco (ex: `error.message` ou `erro.details`), para facilitar o debug.
+
+**OBJETIVO 2: Pivotar o "Simulador" (UX/UI e Lógica)**
+Mude a regra de negócio do componente atual de "Simular Pix".
+
+**Regra para Usuários Free (Modo Degustação):**
+1. Remova o bloqueio (cadeado) do componente.
+2. Altere o título para: "Simulador (Modo Degustação)".
+3. Adicione um aviso visual (badge ou texto pequeno): "Veja como seu dinheiro seria dividido. Valores não alteram seu saldo real."
+4. **Lógica Crucial:** Quando o usuário Free clicar em simular, NÃO chame a API de backend. Faça o cálculo de 30/50/20 apenas no estado local do React (Frontend) e atualize os Donut Charts visualmente.
+5. Adicione um botão "Limpar Simulação" que reseta os valores visuais de volta para o saldo real vindo do `useUserStats`.
+
+**Regra para Usuários Premium (Entrada Manual Real):**
+1. Altere o título do componente para: "Entrada Manual (Real)".
+2. Ao submeter, este sim deve chamar o endpoint `POST /api/dividir-pix` normalmente.
+3. O valor entrará no saldo oficial das caixas de forma definitiva, acionando o hook de atualização em tempo real que já existe.
+
+**CRITÉRIOS ESTRITOS (NÃO QUEBRE ISSO):**
+- Mantenha a lógica matemática das '3 Caixas' (30/50/20) intacta.
+- Continue usando os componentes Shadcn/UI existentes.
+- Não altere a lógica recém-implementada de rollback atômico no `dividir-pix`.

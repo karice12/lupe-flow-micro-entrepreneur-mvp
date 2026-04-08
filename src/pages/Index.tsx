@@ -12,6 +12,7 @@ import { PremiumModal } from "@/components/PremiumModal";
 import { PixSimulator } from "@/components/PixSimulator";
 import { BoxCard } from "@/components/BoxCard";
 import { useUserStats } from "@/hooks/useUserStats";
+import type { SimDeltas } from "@/components/PixSimulator";
 
 const formatCurrency = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });

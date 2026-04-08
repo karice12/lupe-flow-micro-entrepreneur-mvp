@@ -60,15 +60,33 @@ def get_user_status(user_id: str) -> dict:
 
 
 def set_premium(user_id: str, value: bool) -> None:
+    """UPSERT is_premium. If the user row doesn't exist yet, creates it with safe defaults."""
     sb = get_supabase()
     try:
-        sb.table("user_balances").upsert({
-            "user_id": user_id,
-            "is_premium": value,
-        }, on_conflict="user_id", ignore_duplicates=False).execute()
-        logger.info(f"is_premium={value} set for user '{user_id}'.")
+        # Check whether the row exists first to avoid overwriting existing balance data
+        check = sb.table("user_balances").select("user_id").eq("user_id", user_id).limit(1).execute()
+        if check.data:
+            # Row exists — only touch is_premium
+            sb.table("user_balances").update({"is_premium": value}).eq("user_id", user_id).execute()
+            logger.info(f"is_premium={value} updated for existing user '{user_id}'.")
+        else:
+            # Row doesn't exist — insert with full defaults
+            sb.table("user_balances").insert({
+                "user_id":       user_id,
+                "is_premium":    value,
+                "salary":        0,
+                "bills":         0,
+                "emergency":     0,
+                "salary_goal":   0,
+                "bills_goal":    0,
+                "emergency_goal": 0,
+                "lgpd_accepted": False,
+            }).execute()
+            logger.info(f"is_premium={value} — new row created for user '{user_id}'.")
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Supabase set_premium error for '{user_id}': {e}")
+        logger.error(f"Supabase set_premium error for '{user_id}': {e}", exc_info=True)
         raise HTTPException(status_code=503, detail=f"Erro ao atualizar assinatura: {e}")
 
 

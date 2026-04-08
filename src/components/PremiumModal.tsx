@@ -35,14 +35,18 @@ export function PremiumModal({ open, userId, onActivated, onClose }: PremiumModa
       const res = await fetch(`/api/usuario/${encodeURIComponent(userId)}/premium`, {
         method: "POST",
       });
-      if (!res.ok) throw new Error("Falha ao ativar assinatura.");
-      toast.success("🎉 Assinatura Premium ativada!", {
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const detail = body.detail || body.message || `Erro HTTP ${res.status}`;
+        throw new Error(detail);
+      }
+      toast.success("Assinatura Premium ativada!", {
         description: "Bem-vindo ao Lupe Flow Premium!",
       });
       onActivated();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Erro ao ativar assinatura.";
-      toast.error(message);
+      const message = err instanceof Error ? err.message : "Erro desconhecido ao ativar assinatura.";
+      toast.error("Falha ao ativar assinatura", { description: message });
     } finally {
       setIsLoading(false);
     }

@@ -106,9 +106,15 @@ def salvar_consent(user_id: str):
 
 @app.post("/usuario/{user_id}/premium")
 def ativar_premium(user_id: str):
-    """Simulates a successful checkout and activates the premium plan."""
-    set_premium(user_id, True)
-    return {"message": "Assinatura Premium ativada com sucesso.", "is_premium": True}
+    """Activates the premium plan. Creates the user row via UPSERT if it doesn't exist yet."""
+    try:
+        set_premium(user_id, True)
+        return {"message": "Assinatura Premium ativada com sucesso.", "is_premium": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error activating premium for user '{user_id}': {e}", exc_info=True)
+        raise HTTPException(status_code=503, detail=f"Erro inesperado ao ativar assinatura: {e}")
 
 
 @app.delete("/usuario/{user_id}/premium")
