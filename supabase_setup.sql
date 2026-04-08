@@ -16,9 +16,13 @@ CREATE TABLE IF NOT EXISTS public.user_balances (
   bills_goal      numeric     DEFAULT 0,
   emergency_goal  numeric     DEFAULT 0,
   lgpd_accepted   boolean     DEFAULT false,
+  is_premium      boolean     DEFAULT false,
   created_at      timestamptz DEFAULT now(),
   updated_at      timestamptz DEFAULT now()
 );
+
+-- Se a tabela já existia, adiciona a coluna is_premium sem erro:
+ALTER TABLE public.user_balances ADD COLUMN IF NOT EXISTS is_premium boolean DEFAULT false;
 
 -- ─── 2. Tabela de transações ─────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.transactions (

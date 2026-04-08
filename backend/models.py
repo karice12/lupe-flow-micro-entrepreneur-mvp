@@ -42,6 +42,7 @@ class UserStatusResponse(BaseModel):
     exists: bool
     has_goals: bool
     lgpd_accepted: bool
+    is_premium: bool = False
     salary_goal: Optional[float] = None
     bills_goal: Optional[float] = None
     emergency_goal: Optional[float] = None

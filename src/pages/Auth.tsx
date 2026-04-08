@@ -18,7 +18,7 @@ const Auth = () => {
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
   const [pendingDestination, setPendingDestination] = useState<"/dashboard" | "/onboarding">("/onboarding");
   const navigate = useNavigate();
-  const { userId, isAuthReady, setGoals } = useGoals();
+  const { userId, isAuthReady, setGoals, setIsPremium } = useGoals();
 
   useEffect(() => {
     if (isAuthReady && userId) {
@@ -40,6 +40,8 @@ const Auth = () => {
           emergency: data.emergency_goal,
         });
       }
+
+      setIsPremium(!!data.is_premium);
 
       const destination: "/dashboard" | "/onboarding" = data.has_goals ? "/dashboard" : "/onboarding";
       const lgpdOk = data.lgpd_accepted || isLgpdAcceptedLocally(uid);

@@ -35,17 +35,19 @@ def get_user_status(user_id: str) -> dict:
         res = sb.table("user_balances").select("*").eq("user_id", user_id).execute()
         rows = res.data
         if not rows:
-            return {"exists": False, "has_goals": False, "lgpd_accepted": False}
+            return {"exists": False, "has_goals": False, "lgpd_accepted": False, "is_premium": False}
         d = rows[0]
         sg = d.get("salary_goal") or 0
         bg = d.get("bills_goal") or 0
         eg = d.get("emergency_goal") or 0
         has_goals = sg > 0 and bg > 0 and eg > 0
         lgpd = bool(d.get("lgpd_accepted", False))
+        is_premium = bool(d.get("is_premium", False))
         return {
             "exists": True,
             "has_goals": has_goals,
             "lgpd_accepted": lgpd,
+            "is_premium": is_premium,
             "salary_goal": float(sg),
             "bills_goal": float(bg),
             "emergency_goal": float(eg),
@@ -55,6 +57,19 @@ def get_user_status(user_id: str) -> dict:
     except Exception as e:
         logger.error(f"Supabase get_user_status error for '{user_id}': {e}")
         raise HTTPException(status_code=503, detail=f"Erro ao consultar usuário no banco: {e}")
+
+
+def set_premium(user_id: str, value: bool) -> None:
+    sb = get_supabase()
+    try:
+        sb.table("user_balances").upsert({
+            "user_id": user_id,
+            "is_premium": value,
+        }, on_conflict="user_id", ignore_duplicates=False).execute()
+        logger.info(f"is_premium={value} set for user '{user_id}'.")
+    except Exception as e:
+        logger.error(f"Supabase set_premium error for '{user_id}': {e}")
+        raise HTTPException(status_code=503, detail=f"Erro ao atualizar assinatura: {e}")
 
 
 def upsert_goals(user_id: str, salary_goal: float, bills_goal: float, emergency_goal: float) -> None:

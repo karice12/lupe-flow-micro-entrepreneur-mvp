@@ -10,18 +10,22 @@ export interface Goals {
 interface GoalsContextType {
   userId: string;
   goals: Goals | null;
+  isPremium: boolean;
   isAuthReady: boolean;
   setUserId: (id: string) => void;
   setGoals: (g: Goals) => void;
+  setIsPremium: (v: boolean) => void;
   signOut: () => Promise<void>;
 }
 
 const GoalsContext = createContext<GoalsContextType>({
   userId: "",
   goals: null,
+  isPremium: false,
   isAuthReady: false,
   setUserId: () => {},
   setGoals: () => {},
+  setIsPremium: () => {},
   signOut: async () => {},
 });
 
@@ -30,6 +34,7 @@ export const useGoals = () => useContext(GoalsContext);
 export const GoalsProvider = ({ children }: { children: ReactNode }) => {
   const [userId, setUserId] = useState<string>("");
   const [goals, setGoals] = useState<Goals | null>(null);
+  const [isPremium, setIsPremium] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(false);
 
   useEffect(() => {
@@ -54,6 +59,7 @@ export const GoalsProvider = ({ children }: { children: ReactNode }) => {
         } else {
           setUserId("");
           setGoals(null);
+          setIsPremium(false);
         }
         setIsAuthReady(true);
       });
@@ -71,10 +77,11 @@ export const GoalsProvider = ({ children }: { children: ReactNode }) => {
     if (sb) await sb.auth.signOut();
     setUserId("");
     setGoals(null);
+    setIsPremium(false);
   };
 
   return (
-    <GoalsContext.Provider value={{ userId, goals, isAuthReady, setUserId, setGoals, signOut }}>
+    <GoalsContext.Provider value={{ userId, goals, isPremium, isAuthReady, setUserId, setGoals, setIsPremium, signOut }}>
       {children}
     </GoalsContext.Provider>
   );

@@ -10,7 +10,7 @@ from backend.models import (
 )
 from backend.storage import (
     get_balances, save_balances, get_user_status, upsert_goals, save_consent,
-    is_transaction_processed, log_transaction, get_recent_transactions,
+    is_transaction_processed, log_transaction, get_recent_transactions, set_premium,
 )
 
 load_dotenv()
@@ -102,6 +102,19 @@ def salvar_metas(user_id: str, req: UserGoalsRequest):
 def salvar_consent(user_id: str):
     saved_to_db = save_consent(user_id)
     return {"message": "Consentimento LGPD registrado.", "persisted": saved_to_db}
+
+
+@app.post("/usuario/{user_id}/premium")
+def ativar_premium(user_id: str):
+    """Simulates a successful checkout and activates the premium plan."""
+    set_premium(user_id, True)
+    return {"message": "Assinatura Premium ativada com sucesso.", "is_premium": True}
+
+
+@app.delete("/usuario/{user_id}/premium")
+def cancelar_premium(user_id: str):
+    set_premium(user_id, False)
+    return {"message": "Assinatura cancelada.", "is_premium": False}
 
 
 # ─── Balances ─────────────────────────────────────────────────────────────────

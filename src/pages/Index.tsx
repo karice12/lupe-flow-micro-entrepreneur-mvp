@@ -2,13 +2,16 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
 import {
   Wallet, ShieldCheck, Receipt,
-  ArrowDownLeft, Zap, LogOut, RefreshCw, Radio,
+  ArrowDownLeft, Zap, LogOut, RefreshCw, Radio, Star,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useGoals } from "@/contexts/GoalsContext";
 import { LgpdFooter } from "@/components/LgpdFooter";
+import { PremiumModal } from "@/components/PremiumModal";
+import { PixSimulator } from "@/components/PixSimulator";
 import { getSupabaseClient } from "@/lib/supabase";
 
 interface BoxState {
@@ -61,7 +64,7 @@ const buildBoxes = (
 
 const Index = () => {
   const navigate = useNavigate();
-  const { userId, goals, isAuthReady, signOut } = useGoals();
+  const { userId, goals, isPremium, isAuthReady, setIsPremium, signOut } = useGoals();
 
   useEffect(() => {
     if (isAuthReady && !userId) {
@@ -79,10 +82,12 @@ const Index = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated]   = useState<Date | null>(null);
   const [realtimeOk, setRealtimeOk]     = useState(false);
-  const channelRef                      = useRef<ReturnType<Awaited<ReturnType<typeof getSupabaseClient>>["channel"]> | null>(null);
+  const [showPremiumModal, setShowPremiumModal] = useState(false);
+  const channelRef = useRef<ReturnType<Awaited<ReturnType<typeof getSupabaseClient>>["channel"]> | null>(null);
   const totalBalance = boxes.reduce((s, b) => s + b.accumulated, 0);
 
   const fetchBalances = useCallback(async (silent = false) => {
+    if (!userId) return;
     if (!silent) setIsFetching(true);
     else setIsRefreshing(true);
 
@@ -115,8 +120,9 @@ const Index = () => {
   }, [userId, salaryGoal, billsGoal, emergencyGoal]);
 
   const fetchTransactions = useCallback(async () => {
+    if (!userId) return;
     try {
-      const res = await fetch(`/api/transactions?user_id=${encodeURIComponent(userId)}&limit=10`);
+      const res = await fetch(`/api/transactions?user_id=${encodeURIComponent(userId)}&limit=5`);
       if (!res.ok) return;
       const data = await res.json();
       setTransactions(data.transactions || []);
@@ -125,14 +131,27 @@ const Index = () => {
     }
   }, [userId]);
 
+  // ── Load premium status on mount (for page refresh case) ────────────────
+  useEffect(() => {
+    if (!userId) return;
+    fetch(`/api/usuario/${encodeURIComponent(userId)}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data) setIsPremium(!!data.is_premium);
+      })
+      .catch(() => {});
+  }, [userId, setIsPremium]);
+
   // ── Initial load ────────────────────────────────────────────────────────
   useEffect(() => {
+    if (!userId) return;
     fetchBalances();
     fetchTransactions();
-  }, [fetchBalances, fetchTransactions]);
+  }, [fetchBalances, fetchTransactions, userId]);
 
   // ── Supabase Realtime ────────────────────────────────────────────────────
   useEffect(() => {
+    if (!userId) return;
     let active = true;
 
     getSupabaseClient().then((sb) => {
@@ -150,13 +169,12 @@ const Index = () => {
           },
           (payload) => {
             const row = payload.new as TxItem;
-            setTransactions((prev) => [row, ...prev].slice(0, 10));
-            // also refresh balances silently so numbers match
+            setTransactions((prev) => [row, ...prev].slice(0, 5));
             fetchBalances(true);
             const meta = CATEGORY_META[row.category];
             toast.success(
               `+${formatCurrency(row.amount)} → ${meta?.label ?? row.category}`,
-              { description: row.description ?? "Pix processado automaticamente" },
+              { description: row.description ?? "Pix processado" },
             );
           },
         )
@@ -210,6 +228,12 @@ const Index = () => {
               <Zap className="h-4 w-4 text-primary-foreground" />
             </div>
             <h1 className="text-xl font-extrabold tracking-tight text-foreground">Lupe Flow</h1>
+            {isPremium && (
+              <span className="flex items-center gap-1 text-[10px] font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">
+                <Star className="h-2.5 w-2.5" />
+                PREMIUM
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <div className="text-right">
@@ -231,6 +255,30 @@ const Index = () => {
             </button>
           </div>
         </header>
+
+        {/* Premium upgrade banner (shown when not premium) */}
+        {!isPremium && (
+          <Card className="border-primary/30 bg-primary/5">
+            <CardContent className="p-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Star className="h-4 w-4 text-primary shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground">Ative o Lupe Flow Premium</p>
+                  <p className="text-xs text-muted-foreground truncate">Simulador, histórico e realtime por R$ 29,90/mês</p>
+                </div>
+              </div>
+              <Button
+                variant="cta"
+                size="sm"
+                className="shrink-0 h-8 px-3 text-xs rounded-lg"
+                onClick={() => setShowPremiumModal(true)}
+                data-testid="button-upgrade"
+              >
+                Assinar
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Connection + Realtime status banner */}
         <Card className="border-emerald-500/20 bg-emerald-500/5">
@@ -274,6 +322,13 @@ const Index = () => {
           </p>
         )}
 
+        {/* Pix Simulator */}
+        <PixSimulator
+          userId={userId}
+          isPremium={isPremium}
+          onRequestPremium={() => setShowPremiumModal(true)}
+        />
+
         {/* 3 Boxes */}
         <div className="space-y-3">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -306,11 +361,11 @@ const Index = () => {
           })}
         </div>
 
-        {/* Activity feed */}
+        {/* Activity feed — last 5 transactions */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Atividades Recentes
+              Últimas 5 Atividades
             </p>
             {realtimeOk && (
               <span className="text-xs text-emerald-400/70 flex items-center gap-1">
@@ -327,16 +382,12 @@ const Index = () => {
               </div>
               <p className="text-sm font-medium text-foreground">Aguardando primeiro Pix</p>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Envie um POST para{" "}
-                <code className="bg-muted text-primary px-1 py-0.5 rounded text-[10px]">
-                  /api/v1/webhook/pix
-                </code>{" "}
-                e as caixas atualizam sozinhas.
+                Use o simulador acima para registrar sua primeira entrada.
               </p>
             </div>
           ) : (
             <div className="space-y-2">
-              {transactions.slice(0, 10).map((tx) => {
+              {transactions.slice(0, 5).map((tx) => {
                 const meta = CATEGORY_META[tx.category] ?? {
                   label: tx.category,
                   icon: <ArrowDownLeft className="h-4 w-4" />,
@@ -375,6 +426,17 @@ const Index = () => {
       </div>
 
       <LgpdFooter />
+
+      {/* Premium Modal */}
+      <PremiumModal
+        open={showPremiumModal}
+        userId={userId}
+        onActivated={() => {
+          setIsPremium(true);
+          setShowPremiumModal(false);
+        }}
+        onClose={() => setShowPremiumModal(false)}
+      />
     </div>
   );
 };
