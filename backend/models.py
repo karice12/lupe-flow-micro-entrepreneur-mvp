@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 
 
 class PixRequest(BaseModel):
@@ -41,6 +41,7 @@ class UserGoalsRequest(BaseModel):
 class UserStatusResponse(BaseModel):
     exists: bool
     has_goals: bool
+    lgpd_accepted: bool
     salary_goal: Optional[float] = None
     bills_goal: Optional[float] = None
     emergency_goal: Optional[float] = None

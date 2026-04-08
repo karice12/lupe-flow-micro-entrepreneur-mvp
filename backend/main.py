@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 from backend.models import PixRequest, PixResponse, UserGoalsRequest, UserStatusResponse
-from backend.storage import get_balances, save_balances, get_user_status, upsert_goals
+from backend.storage import get_balances, save_balances, get_user_status, upsert_goals, save_consent
 
 load_dotenv()
 
@@ -40,6 +40,12 @@ def salvar_metas(user_id: str, req: UserGoalsRequest):
         raise HTTPException(status_code=422, detail="Todas as metas devem ser maiores que zero.")
     upsert_goals(user_id, req.salary_goal, req.bills_goal, req.emergency_goal)
     return {"message": "Metas salvas com sucesso."}
+
+
+@app.post("/usuario/{user_id}/consent")
+def salvar_consent(user_id: str):
+    saved_to_db = save_consent(user_id)
+    return {"message": "Consentimento LGPD registrado.", "persisted": saved_to_db}
 
 
 @app.get("/saldos", response_model=PixResponse)
@@ -83,15 +89,14 @@ def dividir_pix(req: PixRequest):
     balance = get_balances(req.user_id, defaults)
     valor = req.valor_pix
 
-    base_salary = valor * 0.30
-    base_bills = valor * 0.50
+    base_salary    = valor * 0.30
+    base_bills     = valor * 0.50
     base_emergency = valor * 0.20
-
-    overflow = 0.0
+    overflow       = 0.0
 
     new_salary = balance.salary + base_salary
     if new_salary > balance.salary_goal:
-        overflow += new_salary - balance.salary_goal
+        overflow  += new_salary - balance.salary_goal
         new_salary = balance.salary_goal
 
     new_bills = balance.bills + base_bills
@@ -99,13 +104,13 @@ def dividir_pix(req: PixRequest):
         overflow += new_bills - balance.bills_goal
         new_bills = balance.bills_goal
 
-    allocated_salary = new_salary - balance.salary
-    allocated_bills = new_bills - balance.bills
+    allocated_salary    = new_salary - balance.salary
+    allocated_bills     = new_bills  - balance.bills
     allocated_emergency = base_emergency + overflow
-    new_emergency = balance.emergency + allocated_emergency
+    new_emergency       = balance.emergency + allocated_emergency
 
-    balance.salary = new_salary
-    balance.bills = new_bills
+    balance.salary    = new_salary
+    balance.bills     = new_bills
     balance.emergency = new_emergency
 
     save_balances(req.user_id, balance)
