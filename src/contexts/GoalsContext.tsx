@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { getSupabaseClient } from "@/lib/supabase";
 
 export interface Goals {
   salary: number;
@@ -9,25 +10,71 @@ export interface Goals {
 interface GoalsContextType {
   userId: string;
   goals: Goals | null;
+  isAuthReady: boolean;
   setUserId: (id: string) => void;
   setGoals: (g: Goals) => void;
+  signOut: () => Promise<void>;
 }
 
 const GoalsContext = createContext<GoalsContextType>({
-  userId: "usuario_teste",
+  userId: "",
   goals: null,
+  isAuthReady: false,
   setUserId: () => {},
   setGoals: () => {},
+  signOut: async () => {},
 });
 
 export const useGoals = () => useContext(GoalsContext);
 
 export const GoalsProvider = ({ children }: { children: ReactNode }) => {
-  const [userId, setUserId] = useState<string>("usuario_teste");
+  const [userId, setUserId] = useState<string>("");
   const [goals, setGoals] = useState<Goals | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+
+    getSupabaseClient().then((sb) => {
+      if (!sb) {
+        setIsAuthReady(true);
+        return;
+      }
+
+      sb.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user) {
+          setUserId(session.user.id);
+        }
+        setIsAuthReady(true);
+      });
+
+      const { data: { subscription } } = sb.auth.onAuthStateChange((_event, session) => {
+        if (session?.user) {
+          setUserId(session.user.id);
+        } else {
+          setUserId("");
+          setGoals(null);
+        }
+        setIsAuthReady(true);
+      });
+
+      unsubscribe = () => subscription.unsubscribe();
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  const signOut = async () => {
+    const sb = await getSupabaseClient();
+    if (sb) await sb.auth.signOut();
+    setUserId("");
+    setGoals(null);
+  };
 
   return (
-    <GoalsContext.Provider value={{ userId, goals, setUserId, setGoals }}>
+    <GoalsContext.Provider value={{ userId, goals, isAuthReady, setUserId, setGoals, signOut }}>
       {children}
     </GoalsContext.Provider>
   );

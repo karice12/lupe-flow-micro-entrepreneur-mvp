@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGoals } from "@/contexts/GoalsContext";
 import { Button } from "@/components/ui/button";
@@ -37,7 +37,13 @@ const Onboarding = () => {
   const [values, setValues] = useState({ salary: "", bills: "", emergency: "" });
   const [isSaving, setIsSaving] = useState(false);
   const navigate = useNavigate();
-  const { userId, setGoals } = useGoals();
+  const { userId, isAuthReady, setGoals } = useGoals();
+
+  useEffect(() => {
+    if (isAuthReady && !userId) {
+      navigate("/");
+    }
+  }, [isAuthReady, userId, navigate]);
 
   const current = STEPS[step];
   const isLast = step === STEPS.length - 1;

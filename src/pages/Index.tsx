@@ -61,7 +61,13 @@ const buildBoxes = (
 
 const Index = () => {
   const navigate = useNavigate();
-  const { userId, goals } = useGoals();
+  const { userId, goals, isAuthReady, signOut } = useGoals();
+
+  useEffect(() => {
+    if (isAuthReady && !userId) {
+      navigate("/");
+    }
+  }, [isAuthReady, userId, navigate]);
 
   const salaryGoal    = goals?.salary    ?? 3000;
   const billsGoal     = goals?.bills     ?? 1500;
@@ -216,7 +222,7 @@ const Index = () => {
               </p>
             </div>
             <button
-              onClick={() => navigate("/")}
+              onClick={async () => { await signOut(); navigate("/"); }}
               className="text-muted-foreground hover:text-foreground transition-colors"
               title="Sair"
               data-testid="button-logout"

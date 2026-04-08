@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { useGoals } from "@/contexts/GoalsContext";
 import { LgpdModal, isLgpdAcceptedLocally } from "@/components/LgpdModal";
 import { LgpdFooter } from "@/components/LgpdFooter";
+import { getSupabaseClient } from "@/lib/supabase";
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -17,21 +18,20 @@ const Auth = () => {
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
   const [pendingDestination, setPendingDestination] = useState<"/dashboard" | "/onboarding">("/onboarding");
   const navigate = useNavigate();
-  const { setUserId, setGoals } = useGoals();
+  const { userId, isAuthReady, setGoals } = useGoals();
 
-  const checkAndRoute = async (userId: string, isGoogleLogin = false) => {
-    setIsLoading(true);
+  useEffect(() => {
+    if (isAuthReady && userId) {
+      routeAuthenticatedUser(userId);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthReady, userId]);
+
+  const routeAuthenticatedUser = async (uid: string) => {
     try {
-      const res = await fetch(`/api/usuario/${encodeURIComponent(userId)}`);
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || "Erro ao verificar usuário.");
-      }
-
+      const res = await fetch(`/api/usuario/${encodeURIComponent(uid)}`);
+      if (!res.ok) return;
       const data = await res.json();
-      setUserId(userId);
-
-      const destination = data.has_goals ? "/dashboard" : "/onboarding";
 
       if (data.has_goals) {
         setGoals({
@@ -41,20 +41,18 @@ const Auth = () => {
         });
       }
 
-      const lgpdOk = data.lgpd_accepted || isLgpdAcceptedLocally(userId);
+      const destination: "/dashboard" | "/onboarding" = data.has_goals ? "/dashboard" : "/onboarding";
+      const lgpdOk = data.lgpd_accepted || isLgpdAcceptedLocally(uid);
+
       if (!lgpdOk) {
-        setPendingUserId(userId);
+        setPendingUserId(uid);
         setPendingDestination(destination);
         return;
       }
 
-      toast.success(isGoogleLogin ? "Login com Google realizado!" : data.has_goals ? "Bem-vindo de volta!" : "Login realizado!");
       navigate(destination);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Erro ao conectar com o servidor.";
-      toast.error(message);
-    } finally {
-      setIsLoading(false);
+    } catch {
+      // silent — don't block the UI if status check fails
     }
   };
 
@@ -64,11 +62,64 @@ const Auth = () => {
       toast.error("Preencha todos os campos.");
       return;
     }
-    await checkAndRoute(email.toLowerCase().trim());
+
+    setIsLoading(true);
+    try {
+      const sb = await getSupabaseClient();
+      if (!sb) throw new Error("Serviço de autenticação indisponível. Verifique a configuração do Supabase.");
+
+      if (isLogin) {
+        const { data, error } = await sb.auth.signInWithPassword({ email, password });
+        if (error) throw new Error(error.message);
+        const uid = data.user?.id;
+        if (!uid) throw new Error("Falha ao obter dados do usuário.");
+        await routeAuthenticatedUser(uid);
+        toast.success("Bem-vindo de volta!");
+      } else {
+        if (!name.trim()) {
+          toast.error("Informe seu nome para criar a conta.");
+          return;
+        }
+        const { data, error } = await sb.auth.signUp({
+          email,
+          password,
+          options: { data: { full_name: name } },
+        });
+        if (error) throw new Error(error.message);
+        if (data.user && !data.session) {
+          toast.success("Conta criada! Verifique seu e-mail para confirmar o cadastro.");
+          return;
+        }
+        const uid = data.user?.id;
+        if (!uid) throw new Error("Falha ao criar conta.");
+        toast.success("Conta criada! Vamos configurar seu caixa.");
+        await routeAuthenticatedUser(uid);
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Erro ao autenticar.";
+      toast.error(message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleGoogle = async () => {
-    await checkAndRoute("usuario_google", true);
+    setIsLoading(true);
+    try {
+      const sb = await getSupabaseClient();
+      if (!sb) throw new Error("Serviço de autenticação indisponível.");
+      const { error } = await sb.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/`,
+        },
+      });
+      if (error) throw new Error(error.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Erro ao autenticar com Google.";
+      toast.error(message);
+      setIsLoading(false);
+    }
   };
 
   const handleLgpdAccepted = () => {
@@ -133,7 +184,7 @@ const Auth = () => {
               {isLoading ? (
                 <span className="flex items-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Verificando...
+                  {isLogin ? "Entrando..." : "Criando conta..."}
                 </span>
               ) : isLogin ? "Entrar" : "Criar conta"}
             </Button>

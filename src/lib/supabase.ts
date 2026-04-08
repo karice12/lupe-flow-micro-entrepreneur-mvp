@@ -11,6 +11,11 @@ async function initSupabase(): Promise<SupabaseClient | null> {
     if (!url || !anon_key) return null;
     _client = createClient(url, anon_key, {
       realtime: { params: { eventsPerSecond: 10 } },
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
     });
     return _client;
   } catch {
