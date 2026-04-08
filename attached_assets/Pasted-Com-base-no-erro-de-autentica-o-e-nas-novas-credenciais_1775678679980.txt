@@ -1,0 +1,35 @@
+Com base no erro de autenticação e nas novas credenciais que você forneceu, aqui está o prompt técnico otimizado para o Replit.
+
+Este prompt instrui o Agente a configurar as variáveis de ambiente corretamente e a garantir que o cliente do Supabase no frontend use a chave de publicação (anon_key) enquanto o backend usa a de serviço (service_role).
+
+Prompt para o Replit (Copie e Cole)
+Atue como Engenheiro de Software Fullstack Sênior.
+
+Temos um erro crítico de conexão: "Serviço de autenticação indisponível". Isso indica que o cliente do Supabase não está sendo inicializado corretamente com as novas credenciais. Além disso, precisamos finalizar a transição do Simulador para o modo "Lead Magnet".
+
+1. Configuração de Credenciais (Prioridade Zero):
+Atualize o arquivo de configuração do Supabase (frontend e backend) com os seguintes dados:
+
+SUPABASE_URL: https://zdqlsuyxynupmutxxcij.supabase.co
+
+SUPABASE_ANON_KEY: sb_publishable_yBrNSS_AQ1s0jLS746BHcA_UjvqrFZ- (Use esta chave apenas no Frontend/Client-side).
+
+2. Correção do Backend (Assinatura Premium):
+
+Verifique se o backend/storage.py está tentando ler a SUPABASE_SERVICE_ROLE_KEY dos Secrets.
+
+Importante: Se você não tiver a Service Role Key nos Secrets, use a SUPABASE_ANON_KEY temporariamente para restaurar a conexão, mas certifique-se de que o upsert na tabela user_balances não seja bloqueado por RLS.
+
+Adicione um log print(f"Tentando conectar ao Supabase em: {url}") para confirmar a leitura das variáveis.
+
+3. Finalização do Simulador (Lead Magnet):
+
+Remoção definitiva do bloqueio: No componente PixSimulator.tsx, remova qualquer lógica que renderize o overlay de "Cadeado" ou o botão "Desbloquear Simulador".
+
+Estado Simulado: No Index.tsx, garanta que o estado simDeltas atualize os BoxCards visualmente (cor âmbar) sem persistir dados no banco quando o usuário for Free.
+
+Upgrade UI: Certifique-se de que o erro "Falha ao ativar assinatura" agora exiba o erro técnico retornado pelo banco no PremiumModal.tsx.
+
+4. Verificação de Integridade:
+
+Após atualizar as chaves, verifique se o hook useUserStats consegue buscar os saldos iniciais (mesmo que zerados) sem disparar o erro de "Serviço indisponível".
