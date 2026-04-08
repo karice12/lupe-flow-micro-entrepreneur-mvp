@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Wallet, ShieldCheck, Receipt, ArrowDownLeft, ArrowUpRight, Zap, LogOut } from "lucide-react";
 import { toast } from "sonner";
+import { useGoals } from "@/contexts/GoalsContext";
 
 interface BoxState {
   name: string;
