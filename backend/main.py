@@ -1,12 +1,16 @@
 import os
-from fastapi import FastAPI, HTTPException
+import logging
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from backend.models import PixRequest, PixResponse
+from backend.models import PixRequest, PixResponse, BoxBalance
 from backend.storage import get_balances, save_balances
 
 load_dotenv()
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Lupe Flow API")
 
@@ -22,6 +26,33 @@ app.add_middleware(
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/saldos", response_model=PixResponse)
+def get_saldos(
+    user_id: str = Query(default="usuario_teste"),
+    salary_goal: float = Query(default=3000.0),
+    bills_goal: float = Query(default=1500.0),
+    emergency_goal: float = Query(default=10000.0),
+):
+    defaults = {
+        "salary_goal": salary_goal,
+        "bills_goal": bills_goal,
+        "emergency_goal": emergency_goal,
+    }
+    balance = get_balances(user_id, defaults)
+    return PixResponse(
+        salary=round(balance.salary, 2),
+        bills=round(balance.bills, 2),
+        emergency=round(balance.emergency, 2),
+        salary_goal=balance.salary_goal,
+        bills_goal=balance.bills_goal,
+        emergency_goal=balance.emergency_goal,
+        allocated_salary=0.0,
+        allocated_bills=0.0,
+        allocated_emergency=0.0,
+        overflow=0.0,
+    )
 
 
 @app.post("/dividir-pix", response_model=PixResponse)

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -29,8 +29,23 @@ const INITIAL_TRANSACTIONS: Transaction[] = [
   { id: 3, description: "Pagamento Fornecedor", amount: -200, date: "06/04", type: "out" },
 ];
 
+const USER_ID = "usuario_teste";
+
 const formatCurrency = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+const makeBoxes = (
+  salary: number,
+  bills: number,
+  emergency: number,
+  salaryGoal: number,
+  billsGoal: number,
+  emergencyGoal: number
+): BoxState[] => [
+  { name: "Salário", accumulated: salary, goal: salaryGoal, icon: <Wallet className="h-5 w-5" /> },
+  { name: "Contas", accumulated: bills, goal: billsGoal, icon: <Receipt className="h-5 w-5" /> },
+  { name: "Emergência", accumulated: emergency, goal: emergencyGoal, icon: <ShieldCheck className="h-5 w-5" /> },
+];
 
 const Index = () => {
   const navigate = useNavigate();
@@ -40,16 +55,47 @@ const Index = () => {
   const billsGoal = goals?.bills ?? 1500;
   const emergencyGoal = goals?.emergency ?? 10000;
 
-  const [boxes, setBoxes] = useState<BoxState[]>([
-    { name: "Salário", accumulated: 0, goal: salaryGoal, icon: <Wallet className="h-5 w-5" /> },
-    { name: "Contas", accumulated: 0, goal: billsGoal, icon: <Receipt className="h-5 w-5" /> },
-    { name: "Emergência", accumulated: 0, goal: emergencyGoal, icon: <ShieldCheck className="h-5 w-5" /> },
-  ]);
+  const [boxes, setBoxes] = useState<BoxState[]>(
+    makeBoxes(0, 0, 0, salaryGoal, billsGoal, emergencyGoal)
+  );
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isFetching, setIsFetching] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>(INITIAL_TRANSACTIONS);
 
   const totalBalance = boxes.reduce((s, b) => s + b.accumulated, 0);
+
+  // Load balances from backend on mount
+  useEffect(() => {
+    const params = new URLSearchParams({
+      user_id: USER_ID,
+      salary_goal: String(salaryGoal),
+      bills_goal: String(billsGoal),
+      emergency_goal: String(emergencyGoal),
+    });
+
+    fetch(`/api/saldos?${params}`)
+      .then((res) => {
+        if (!res.ok) throw new Error("Falha ao carregar saldos.");
+        return res.json();
+      })
+      .then((data) => {
+        setBoxes(makeBoxes(
+          data.salary,
+          data.bills,
+          data.emergency,
+          data.salary_goal,
+          data.bills_goal,
+          data.emergency_goal,
+        ));
+      })
+      .catch((err) => {
+        console.error(err);
+        toast.error("Não foi possível carregar os saldos do banco.");
+      })
+      .finally(() => setIsFetching(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSimulate = async () => {
     const value = parseFloat(inputValue.replace(",", "."));
@@ -65,7 +111,7 @@ const Index = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           valor_pix: value,
-          user_id: "demo-user",
+          user_id: USER_ID,
           salary_goal: salaryGoal,
           bills_goal: billsGoal,
           emergency_goal: emergencyGoal,
@@ -79,16 +125,19 @@ const Index = () => {
 
       const data = await res.json();
 
-      setBoxes([
-        { name: "Salário", accumulated: data.salary, goal: data.salary_goal, icon: <Wallet className="h-5 w-5" /> },
-        { name: "Contas", accumulated: data.bills, goal: data.bills_goal, icon: <Receipt className="h-5 w-5" /> },
-        { name: "Emergência", accumulated: data.emergency, goal: data.emergency_goal, icon: <ShieldCheck className="h-5 w-5" /> },
-      ]);
+      setBoxes(makeBoxes(
+        data.salary,
+        data.bills,
+        data.emergency,
+        data.salary_goal,
+        data.bills_goal,
+        data.emergency_goal,
+      ));
 
       setTransactions((prev) => [
         {
           id: Date.now(),
-          description: `Pix Simulado`,
+          description: "Pix Simulado",
           amount: value,
           date: new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
           type: "in",
@@ -129,7 +178,9 @@ const Index = () => {
           <div className="flex items-center gap-3">
             <div className="text-right">
               <p className="text-xs text-muted-foreground">Saldo disponível</p>
-              <p className="text-lg font-bold text-foreground">{formatCurrency(totalBalance)}</p>
+              <p className="text-lg font-bold text-foreground">
+                {isFetching ? "..." : formatCurrency(totalBalance)}
+              </p>
             </div>
             <button
               onClick={() => navigate("/")}
@@ -156,7 +207,7 @@ const Index = () => {
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && !isLoading && handleSimulate()}
                   className="pl-9 bg-background border-border"
-                  disabled={isLoading}
+                  disabled={isLoading || isFetching}
                   data-testid="input-pix-value"
                 />
               </div>
@@ -164,7 +215,7 @@ const Index = () => {
                 variant="cta"
                 size="lg"
                 onClick={handleSimulate}
-                disabled={isLoading}
+                disabled={isLoading || isFetching}
                 data-testid="button-simular-pix"
               >
                 {isLoading ? "Processando..." : "Simular Pix"}
@@ -189,12 +240,12 @@ const Index = () => {
                       <span className="font-semibold text-sm">{box.name}</span>
                     </div>
                     <span className="text-xs text-muted-foreground">
-                      {pct.toFixed(0)}%
+                      {isFetching ? "..." : `${pct.toFixed(0)}%`}
                     </span>
                   </div>
-                  <Progress value={pct} className="h-2 bg-muted" />
+                  <Progress value={isFetching ? 0 : pct} className="h-2 bg-muted" />
                   <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>{formatCurrency(box.accumulated)}</span>
+                    <span>{isFetching ? "..." : formatCurrency(box.accumulated)}</span>
                     <span>Meta: {formatCurrency(box.goal)}</span>
                   </div>
                 </CardContent>
