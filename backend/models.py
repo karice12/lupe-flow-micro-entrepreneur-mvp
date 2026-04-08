@@ -8,6 +8,7 @@ class PixRequest(BaseModel):
     salary_goal: Optional[float] = None
     bills_goal: Optional[float] = None
     emergency_goal: Optional[float] = None
+    description: Optional[str] = None
 
 
 class BoxBalance(BaseModel):

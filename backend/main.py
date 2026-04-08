@@ -244,22 +244,51 @@ def webhook_pix(req: WebhookPixRequest, user_id: str = Query(default="usuario_te
     )
 
 
-# ─── Legacy simulador endpoint (kept for compatibility) ───────────────────────
+# ─── Pix simulator endpoint ───────────────────────────────────────────────────
 
 @app.post("/dividir-pix", response_model=PixResponse)
 def dividir_pix(req: PixRequest):
     if req.valor_pix <= 0:
-        raise HTTPException(status_code=422, detail="O valor do Pix deve ser maior que zero.")
+        raise HTTPException(status_code=400, detail="O valor do Pix deve ser maior que zero.")
 
     defaults = {
         "salary_goal": req.salary_goal or 3000.0,
-        "bills_goal": req.bills_goal or 1500.0,
+        "bills_goal":  req.bills_goal  or 1500.0,
         "emergency_goal": req.emergency_goal or 10000.0,
     }
 
     balance = get_balances(req.user_id, defaults)
+
+    # Snapshot for rollback in case transaction logging fails
+    old_salary    = balance.salary
+    old_bills     = balance.bills
+    old_emergency = balance.emergency
+
     balance, allocs = _apply_split(req.valor_pix, balance)
     save_balances(req.user_id, balance)
+
+    description = (req.description or "").strip() or "Pix Simulado"
+    try:
+        if allocs["alloc_salary"] > 0:
+            log_transaction(req.user_id, allocs["alloc_salary"], "salario", description)
+        if allocs["alloc_bills"] > 0:
+            log_transaction(req.user_id, allocs["alloc_bills"], "contas", description)
+        if allocs["alloc_emergency"] > 0:
+            log_transaction(req.user_id, allocs["alloc_emergency"], "reserva", description)
+    except Exception as exc:
+        # Atomic rollback: restore previous balance if log fails
+        logger.error(f"Transaction log failed for {req.user_id}, rolling back: {exc}")
+        try:
+            balance.salary    = old_salary
+            balance.bills     = old_bills
+            balance.emergency = old_emergency
+            save_balances(req.user_id, balance)
+        except Exception as rb_exc:
+            logger.error(f"Rollback also failed: {rb_exc}")
+        raise HTTPException(
+            status_code=503,
+            detail="Erro ao registrar a transação. Saldo restaurado automaticamente.",
+        )
 
     return PixResponse(
         salary=round(balance.salary, 2),
