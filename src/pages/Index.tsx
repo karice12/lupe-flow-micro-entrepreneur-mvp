@@ -46,55 +46,71 @@ const Index = () => {
     { name: "Emergência", accumulated: 0, goal: emergencyGoal, icon: <ShieldCheck className="h-5 w-5" /> },
   ]);
   const [inputValue, setInputValue] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>(INITIAL_TRANSACTIONS);
 
   const totalBalance = boxes.reduce((s, b) => s + b.accumulated, 0);
 
-  const handleSimulate = () => {
+  const handleSimulate = async () => {
     const value = parseFloat(inputValue.replace(",", "."));
     if (!value || value <= 0) {
       toast.error("Insira um valor válido.");
       return;
     }
 
-    setBoxes((prev) => {
-      const updated = [...prev.map((b) => ({ ...b }))];
-      const salario = updated[0];
-      const contas = updated[1];
-      const emergencia = updated[2];
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/dividir-pix", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          valor_pix: value,
+          user_id: "demo-user",
+          salary_goal: salaryGoal,
+          bills_goal: billsGoal,
+          emergency_goal: emergencyGoal,
+        }),
+      });
 
-      const salarioFull = salario.accumulated >= salario.goal;
-      const contasFull = contas.accumulated >= contas.goal;
-
-      if (salarioFull && contasFull) {
-        emergencia.accumulated += value;
-      } else {
-        const splits = [
-          { box: salario, pct: 0.3 },
-          { box: contas, pct: 0.5 },
-          { box: emergencia, pct: 0.2 },
-        ];
-        splits.forEach(({ box, pct }) => {
-          box.accumulated += value * pct;
-        });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Erro ao processar Pix.");
       }
 
-      return updated;
-    });
+      const data = await res.json();
 
-    setTransactions((prev) => [
-      {
-        id: Date.now(),
-        description: `Pix Simulado`,
-        amount: value,
-        date: new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
-        type: "in",
-      },
-      ...prev,
-    ]);
+      setBoxes([
+        { name: "Salário", accumulated: data.salary, goal: data.salary_goal, icon: <Wallet className="h-5 w-5" /> },
+        { name: "Contas", accumulated: data.bills, goal: data.bills_goal, icon: <Receipt className="h-5 w-5" /> },
+        { name: "Emergência", accumulated: data.emergency, goal: data.emergency_goal, icon: <ShieldCheck className="h-5 w-5" /> },
+      ]);
 
-    setInputValue("");
-    toast.success(`Simulação de ${formatCurrency(value)} aplicada!`);
+      setTransactions((prev) => [
+        {
+          id: Date.now(),
+          description: `Pix Simulado`,
+          amount: value,
+          date: new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+          type: "in",
+        },
+        ...prev,
+      ]);
+
+      setInputValue("");
+
+      if (data.overflow > 0) {
+        toast.success(
+          `${formatCurrency(value)} distribuído! Transbordo de ${formatCurrency(data.overflow)} foi para Emergência.`
+        );
+      } else {
+        toast.success(`${formatCurrency(value)} distribuído com sucesso!`);
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Erro ao conectar com o servidor.";
+      toast.error(message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -138,12 +154,20 @@ const Index = () => {
                   placeholder="0,00"
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSimulate()}
+                  onKeyDown={(e) => e.key === "Enter" && !isLoading && handleSimulate()}
                   className="pl-9 bg-background border-border"
+                  disabled={isLoading}
+                  data-testid="input-pix-value"
                 />
               </div>
-              <Button variant="cta" size="lg" onClick={handleSimulate}>
-                Simular Pix
+              <Button
+                variant="cta"
+                size="lg"
+                onClick={handleSimulate}
+                disabled={isLoading}
+                data-testid="button-simular-pix"
+              >
+                {isLoading ? "Processando..." : "Simular Pix"}
               </Button>
             </div>
           </CardContent>

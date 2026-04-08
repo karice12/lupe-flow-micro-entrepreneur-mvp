@@ -1,0 +1,35 @@
+Aja como um Engenheiro de Software Full-Stack Sênior. Estou desenvolvendo o Lupe Flow, um Micro-SaaS financeiro para microempreendedores. Meu frontend já está em React/Tailwind. Vamos estruturar o Backend em Python/FastAPI e conectá-lo ao Supabase (PostgreSQL), mantendo o código estritamente modularizado.
+
+1. Configuração do Backend (Python/FastAPI):
+
+Crie uma pasta /backend e dentro dela um main.py.
+
+Configure o FastAPI e inclua o CORSMiddleware para permitir requisições do frontend.
+
+Crie a conexão com o Supabase usando as variáveis de ambiente SUPABASE_URL e SUPABASE_ANON_KEY.
+
+Crie o endpoint POST /dividir-pix. Ele deve receber um JSON com valor_pix e user_id.
+
+2. Regra de Negócio (Lógica das 3 Caixas e Transbordo):
+
+No endpoint /dividir-pix, primeiro consulte no Supabase as metas mensais e os saldos atuais do usuário nas três categorias.
+
+A divisão base é: 30% Salário, 50% Contas, 20% Reserva.
+
+Aplique a regra de Transbordo: Calcule se a adição do novo valor fará o Salário ou as Contas ultrapassarem 100% da meta. Qualquer centavo excedente destas duas categorias deve ser somado automaticamente ao valor destinado à Reserva de Emergência.
+
+Atualize os valores no banco de dados e retorne um JSON com os novos saldos.
+
+3. Conexão Frontend-Backend:
+
+No componente do Dashboard (React), atualize a função do Botão "Simular Pix" para fazer um fetch/axios POST para a nova API do FastAPI.
+
+Utilize o JSON de resposta para atualizar o estado do React.
+
+Faça com que as Barras de Progresso e os 3 Cards Grandes reflitam os novos valores instantaneamente de forma fluida.
+
+Importante: Mantenha estritamente o estilo visual atual (Dark Mode Premium com detalhes e botões em laranja/âmbar). Não altere os estilos do Tailwind, foque apenas na lógica de estado e integração.
+
+4. Configuração de Execução:
+
+Atualize o arquivo .replit ou crie um script de inicialização para que, ao clicar em "Run", o servidor FastAPI inicie na porta 8000 e o React inicie na porta 3000 (ou as portas padrão do projeto) simultaneamente.
