@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowDownLeft, Loader2, X, Sparkles, BadgeCheck } from "lucide-react";
+import { ArrowDownLeft, Loader2, X, Sparkles, BadgeCheck, Zap } from "lucide-react";
 import { toast } from "sonner";
 
 export interface SimDeltas {
@@ -17,6 +17,7 @@ interface PixSimulatorProps {
   onSimulateLocal: (deltas: SimDeltas) => void;
   onClearSimulation: () => void;
   hasSimulation: boolean;
+  onRequestPremium?: () => void;
 }
 
 const formatCurrency = (v: number) =>
@@ -30,6 +31,7 @@ export function PixSimulator({
   onSimulateLocal,
   onClearSimulation,
   hasSimulation,
+  onRequestPremium,
 }: PixSimulatorProps) {
   const [amount, setAmount]           = useState("");
   const [description, setDescription] = useState("");
@@ -111,11 +113,11 @@ export function PixSimulator({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {isPremium ? "Entrada Manual (Real)" : "Simulador (Modo Degustação)"}
+              {isPremium ? "Lançar PIX Recebido" : "Simulador de PIX"}
             </p>
             {!isPremium && (
               <p className="text-[11px] text-muted-foreground/70 mt-0.5 leading-relaxed">
-                Veja como seu dinheiro seria dividido. Valores não alteram seu saldo real.
+                Modo Simulação: Veja como seu dinheiro seria dividido. Valores não alteram seu saldo real.
               </p>
             )}
           </div>
@@ -207,6 +209,19 @@ export function PixSimulator({
             </Button>
           )}
         </div>
+
+        {/* CTA for free users */}
+        {!isPremium && (
+          <button
+            type="button"
+            onClick={onRequestPremium}
+            className="w-full flex items-center justify-center gap-1.5 text-[11px] text-primary/80 hover:text-primary transition-colors font-medium pt-0.5"
+            data-testid="button-simulator-cta"
+          >
+            <Zap className="h-3 w-3" />
+            Efetivar lançamentos automaticamente com o Premium
+          </button>
+        )}
       </CardContent>
     </Card>
   );

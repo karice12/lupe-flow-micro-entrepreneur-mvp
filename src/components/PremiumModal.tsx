@@ -7,7 +7,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Zap, Check, Loader2, Star } from "lucide-react";
+import { Zap, Check, Loader2, Star, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 
 interface PremiumModalProps {
@@ -18,9 +18,8 @@ interface PremiumModalProps {
 }
 
 const FEATURES = [
-  "Simulador de Pix ilimitado",
-  "Divisão automática das 3 Caixas",
-  "Regra de Transbordo inteligente",
+  "Lançamentos reais nas 3 Caixas",
+  "Divisão automática com Regra de Transbordo",
   "Histórico completo de transações",
   "Atualizações em tempo real",
   "Relatórios financeiros mensais",
@@ -28,9 +27,11 @@ const FEATURES = [
 
 export function PremiumModal({ open, userId, onActivated, onClose }: PremiumModalProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [inlineError, setInlineError] = useState<string | null>(null);
 
   const handleActivate = async () => {
     setIsLoading(true);
+    setInlineError(null);
     try {
       const res = await fetch(`/api/usuario/${encodeURIComponent(userId)}/premium`, {
         method: "POST",
@@ -46,6 +47,7 @@ export function PremiumModal({ open, userId, onActivated, onClose }: PremiumModa
       onActivated();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Erro desconhecido ao ativar assinatura.";
+      setInlineError(message);
       toast.error("Falha ao ativar assinatura", { description: message });
     } finally {
       setIsLoading(false);
@@ -53,7 +55,7 @@ export function PremiumModal({ open, userId, onActivated, onClose }: PremiumModa
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) { setInlineError(null); onClose(); } }}>
       <DialogContent className="bg-card border-border max-w-sm mx-auto">
         <DialogHeader>
           <div className="flex items-center gap-3 mb-1">
@@ -93,6 +95,14 @@ export function PremiumModal({ open, userId, onActivated, onClose }: PremiumModa
           ))}
         </ul>
 
+        {/* Inline diagnostic error */}
+        {inlineError && (
+          <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+            <p className="text-xs text-destructive leading-relaxed break-all">{inlineError}</p>
+          </div>
+        )}
+
         <Button
           variant="cta"
           size="lg"
@@ -109,7 +119,7 @@ export function PremiumModal({ open, userId, onActivated, onClose }: PremiumModa
         </Button>
 
         <button
-          onClick={onClose}
+          onClick={() => { setInlineError(null); onClose(); }}
           className="text-xs text-center text-muted-foreground hover:text-foreground transition-colors w-full"
           disabled={isLoading}
         >

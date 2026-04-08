@@ -1,0 +1,45 @@
+Atue como Engenheiro de Software Fullstack Sênior. O sistema é um gerenciador financeiro para MEIs (Lupe Flow) que utiliza React (Vite), Supabase (PostgreSQL/RLS) e Tailwind/Shadcn. Precisamos corrigir um erro crítico de banco na assinatura e mudar a lógica de negócio do Simulador.
+
+1. Debug e Correção do Erro de Assinatura (Backend/Supabase)
+O erro "Falha ao ativar assinatura" ocorre ao clicar no botão Premium.
+
+Tarefa: Revise a função ou API route que processa o upgrade (provavelmente POST /api/usuario/{id}/premium).
+
+Lógica de Upsert: Garanta que a query utilize um upsert na tabela user_balances. Se o usuário ainda não tiver um registro de saldo, ele deve ser criado com is_premium: true.
+
+Logs: Adicione blocos try/except detalhados. No catch, envie o erro exato do Supabase/PostgreSQL para o console para identificarmos se é um erro de RLS (Row Level Security) ou UUID mal formatado.
+
+Frontend: No componente de Modal Premium, capture o erro técnico e exiba-o temporariamente em um toast ou pequeno texto de erro para diagnóstico.
+
+2. Pivot do Simulador (Lead Magnet)
+O Simulador não deve mais ser bloqueado com cadeado. Ele será a ferramenta de "degustação".
+
+Usuário FREE (Modo Simulação):
+
+Remova o overlay de bloqueio e o cadeado.
+
+Exiba um badge ou texto discreto: "Modo Simulação: Veja como seu dinheiro seria dividido".
+
+Ao simular um PIX, os valores não devem ser persistidos no banco de dados real ou devem ser enviados com uma flag is_simulated: true.
+
+Adicione um botão "Limpar Simulação" (índice de lixeira ou texto) que reseta os valores visuais dos cards (Salário, Contas, Emergência) para o estado real do banco.
+
+Usuário PREMIUM (Lançamento Real):
+
+O componente muda o título para "Lançar PIX Recebido".
+
+O envio do valor atualiza permanentemente o user_balances e gera registros reais na tabela de transações.
+
+3. UI/UX e Refatoração
+Componente Simulador: Utilize os componentes Input e Button do Shadcn/UI.
+
+Feedback Visual: Quando o usuário Free simular, as animações dos Donut Charts (BoxCard.tsx) devem reagir aos novos valores simulados, mas sem disparar o "Rollback Atômico" de segurança de saldo real.
+
+Hook useUserStats: Garanta que o hook suporte um estado local temporário para a simulação, para que o usuário veja a mudança nos gráficos antes de decidir assinar.
+
+Critérios de Aceite:
+O botão "Assinar" deve funcionar ou reportar o erro exato do banco.
+
+Usuários deslogados ou Free devem conseguir digitar valores no simulador e ver os gráficos de "3 Caixas" (30/50/20) se movendo.
+
+O simulador para Free deve ter um CTA (Call to Action) convidando para "Efetivar lançamentos automaticamente com o Premium

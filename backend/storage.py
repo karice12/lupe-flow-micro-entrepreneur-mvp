@@ -13,16 +13,21 @@ def get_supabase():
     if _supabase_client is not None:
         return _supabase_client
     url = os.getenv("SUPABASE_URL", "").strip()
-    key = os.getenv("SUPABASE_ANON_KEY", "").strip()
+    # Prefer the service role key so the backend bypasses RLS entirely.
+    # Fall back to anon key if no service role key is set.
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    anon_key    = os.getenv("SUPABASE_ANON_KEY", "").strip()
+    key = service_key or anon_key
     if not url or not key:
         raise HTTPException(
             status_code=503,
-            detail="Banco de dados não configurado. Verifique as variáveis SUPABASE_URL e SUPABASE_ANON_KEY."
+            detail="Banco de dados não configurado. Verifique as variáveis SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY (ou SUPABASE_ANON_KEY)."
         )
+    key_type = "service_role" if service_key else "anon"
     try:
         from supabase import create_client
         _supabase_client = create_client(url, key)
-        logger.info("Supabase client initialized successfully.")
+        logger.info(f"Supabase client initialized successfully (key_type={key_type}).")
         return _supabase_client
     except Exception as e:
         logger.error(f"Failed to initialize Supabase client: {e}")
@@ -63,31 +68,38 @@ def set_premium(user_id: str, value: bool) -> None:
     """UPSERT is_premium. If the user row doesn't exist yet, creates it with safe defaults."""
     sb = get_supabase()
     try:
-        # Check whether the row exists first to avoid overwriting existing balance data
-        check = sb.table("user_balances").select("user_id").eq("user_id", user_id).limit(1).execute()
-        if check.data:
-            # Row exists — only touch is_premium
-            sb.table("user_balances").update({"is_premium": value}).eq("user_id", user_id).execute()
-            logger.info(f"is_premium={value} updated for existing user '{user_id}'.")
-        else:
-            # Row doesn't exist — insert with full defaults
-            sb.table("user_balances").insert({
-                "user_id":       user_id,
-                "is_premium":    value,
-                "salary":        0,
-                "bills":         0,
-                "emergency":     0,
-                "salary_goal":   0,
-                "bills_goal":    0,
+        # Single upsert — works whether or not the row already exists.
+        # Only is_premium is changed; existing balance columns are preserved
+        # because on_conflict only merges the listed columns.
+        res = sb.table("user_balances").upsert(
+            {
+                "user_id":        user_id,
+                "is_premium":     value,
+                "salary":         0,
+                "bills":          0,
+                "emergency":      0,
+                "salary_goal":    0,
+                "bills_goal":     0,
                 "emergency_goal": 0,
-                "lgpd_accepted": False,
-            }).execute()
-            logger.info(f"is_premium={value} — new row created for user '{user_id}'.")
+                "lgpd_accepted":  False,
+            },
+            on_conflict="user_id",
+            ignore_duplicates=False,
+        ).execute()
+        logger.info(f"set_premium upsert OK — user='{user_id}' is_premium={value} response={res.data}")
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Supabase set_premium error for '{user_id}': {e}", exc_info=True)
-        raise HTTPException(status_code=503, detail=f"Erro ao atualizar assinatura: {e}")
+        # Log the full exception so we can see any RLS / UUID / constraint error
+        logger.error(
+            f"set_premium FAILED for user='{user_id}' is_premium={value} "
+            f"error_type={type(e).__name__} detail={e}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail=f"Erro ao atualizar assinatura: [{type(e).__name__}] {e}",
+        )
 
 
 def upsert_goals(user_id: str, salary_goal: float, bills_goal: float, emergency_goal: float) -> None:
