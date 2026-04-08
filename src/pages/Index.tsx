@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Wallet, ShieldCheck, Receipt, ArrowDownLeft, ArrowUpRight, Zap, LogOut } from "lucide-react";
 import { toast } from "sonner";
+import { useGoals } from "@/contexts/GoalsContext";
 
 interface BoxState {
   name: string;
@@ -33,10 +34,16 @@ const formatCurrency = (v: number) =>
 
 const Index = () => {
   const navigate = useNavigate();
+  const { goals } = useGoals();
+
+  const salaryGoal = goals?.salary ?? 3000;
+  const billsGoal = goals?.bills ?? 1500;
+  const emergencyGoal = goals?.emergency ?? 10000;
+
   const [boxes, setBoxes] = useState<BoxState[]>([
-    { name: "Salário", accumulated: 0, goal: 3000, icon: <Wallet className="h-5 w-5" /> },
-    { name: "Contas", accumulated: 0, goal: 1500, icon: <Receipt className="h-5 w-5" /> },
-    { name: "Emergência", accumulated: 0, goal: 10000, icon: <ShieldCheck className="h-5 w-5" /> },
+    { name: "Salário", accumulated: 0, goal: salaryGoal, icon: <Wallet className="h-5 w-5" /> },
+    { name: "Contas", accumulated: 0, goal: billsGoal, icon: <Receipt className="h-5 w-5" /> },
+    { name: "Emergência", accumulated: 0, goal: emergencyGoal, icon: <ShieldCheck className="h-5 w-5" /> },
   ]);
   const [inputValue, setInputValue] = useState("");
   const [transactions, setTransactions] = useState<Transaction[]>(INITIAL_TRANSACTIONS);

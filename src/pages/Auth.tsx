@@ -19,12 +19,12 @@ const Auth = () => {
       return;
     }
     toast.success(isLogin ? "Login realizado!" : "Conta criada com sucesso!");
-    navigate("/dashboard");
+    navigate("/onboarding");
   };
 
   const handleGoogle = () => {
     toast.success("Login com Google realizado!");
-    navigate("/dashboard");
+    navigate("/onboarding");
   };
 
   return (
