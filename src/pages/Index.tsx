@@ -103,9 +103,18 @@ const Index = () => {
               Lupe Flow
             </h1>
           </div>
-          <div className="text-right">
-            <p className="text-xs text-muted-foreground">Saldo disponível</p>
-            <p className="text-lg font-bold text-foreground">{formatCurrency(totalBalance)}</p>
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground">Saldo disponível</p>
+              <p className="text-lg font-bold text-foreground">{formatCurrency(totalBalance)}</p>
+            </div>
+            <button
+              onClick={() => navigate("/")}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+              title="Sair"
+            >
+              <LogOut className="h-5 w-5" />
+            </button>
           </div>
         </header>
 
