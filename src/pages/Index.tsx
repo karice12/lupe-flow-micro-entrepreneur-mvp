@@ -1,14 +1,15 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
   Wallet, ShieldCheck, Receipt,
-  ArrowDownLeft, ArrowUpRight, Zap, LogOut, RefreshCw,
+  ArrowDownLeft, Zap, LogOut, RefreshCw, Radio,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useGoals } from "@/contexts/GoalsContext";
 import { LgpdFooter } from "@/components/LgpdFooter";
+import { getSupabaseClient } from "@/lib/supabase";
 
 interface BoxState {
   name: string;
@@ -17,12 +18,12 @@ interface BoxState {
   icon: React.ReactNode;
 }
 
-interface Transaction {
-  id: number;
-  description: string;
+interface TxItem {
+  id: string;
   amount: number;
-  date: string;
-  type: "in" | "out";
+  category: string;
+  description: string | null;
+  created_at: string;
 }
 
 const formatCurrency = (v: number) =>
@@ -30,6 +31,24 @@ const formatCurrency = (v: number) =>
 
 const formatTime = (d: Date) =>
   d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+
+const formatTxDate = (iso: string) => {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString("pt-BR", {
+      day: "2-digit", month: "2-digit",
+      hour: "2-digit", minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+};
+
+const CATEGORY_META: Record<string, { label: string; icon: React.ReactNode }> = {
+  salario: { label: "Salário",    icon: <Wallet className="h-4 w-4" /> },
+  contas:  { label: "Contas",     icon: <Receipt className="h-4 w-4" /> },
+  reserva: { label: "Emergência", icon: <ShieldCheck className="h-4 w-4" /> },
+};
 
 const buildBoxes = (
   salary: number, bills: number, emergency: number,
@@ -49,14 +68,15 @@ const Index = () => {
   const emergencyGoal = goals?.emergency ?? 10000;
 
   const [boxes, setBoxes]               = useState<BoxState[]>(buildBoxes(0, 0, 0, salaryGoal, billsGoal, emergencyGoal));
+  const [transactions, setTransactions] = useState<TxItem[]>([]);
   const [isFetching, setIsFetching]     = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated]   = useState<Date | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-
+  const [realtimeOk, setRealtimeOk]     = useState(false);
+  const channelRef                      = useRef<ReturnType<Awaited<ReturnType<typeof getSupabaseClient>>["channel"]> | null>(null);
   const totalBalance = boxes.reduce((s, b) => s + b.accumulated, 0);
 
-  const fetchBalances = async (silent = false) => {
+  const fetchBalances = useCallback(async (silent = false) => {
     if (!silent) setIsFetching(true);
     else setIsRefreshing(true);
 
@@ -86,11 +106,91 @@ const Index = () => {
       setIsFetching(false);
       setIsRefreshing(false);
     }
-  };
+  }, [userId, salaryGoal, billsGoal, emergencyGoal]);
 
+  const fetchTransactions = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/transactions?user_id=${encodeURIComponent(userId)}&limit=10`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setTransactions(data.transactions || []);
+    } catch {
+      // silent failure — feed is non-critical
+    }
+  }, [userId]);
+
+  // ── Initial load ────────────────────────────────────────────────────────
   useEffect(() => {
     fetchBalances();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchTransactions();
+  }, [fetchBalances, fetchTransactions]);
+
+  // ── Supabase Realtime ────────────────────────────────────────────────────
+  useEffect(() => {
+    let active = true;
+
+    getSupabaseClient().then((sb) => {
+      if (!sb || !active) return;
+
+      const channel = sb
+        .channel(`lupe-${userId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "transactions",
+            filter: `user_id=eq.${userId}`,
+          },
+          (payload) => {
+            const row = payload.new as TxItem;
+            setTransactions((prev) => [row, ...prev].slice(0, 10));
+            // also refresh balances silently so numbers match
+            fetchBalances(true);
+            const meta = CATEGORY_META[row.category];
+            toast.success(
+              `+${formatCurrency(row.amount)} → ${meta?.label ?? row.category}`,
+              { description: row.description ?? "Pix processado automaticamente" },
+            );
+          },
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "user_balances",
+            filter: `user_id=eq.${userId}`,
+          },
+          (payload) => {
+            const d = payload.new as Record<string, number>;
+            setBoxes(buildBoxes(
+              d.salary, d.bills, d.emergency,
+              d.salary_goal ?? salaryGoal,
+              d.bills_goal  ?? billsGoal,
+              d.emergency_goal ?? emergencyGoal,
+            ));
+            setLastUpdated(new Date());
+          },
+        )
+        .subscribe((status) => {
+          setRealtimeOk(status === "SUBSCRIBED");
+        });
+
+      channelRef.current = channel as never;
+    });
+
+    return () => {
+      active = false;
+      getSupabaseClient().then((sb) => {
+        if (sb && channelRef.current) {
+          sb.removeChannel(channelRef.current as never);
+          channelRef.current = null;
+        }
+      });
+      setRealtimeOk(false);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   return (
@@ -126,7 +226,7 @@ const Index = () => {
           </div>
         </header>
 
-        {/* Connection status banner */}
+        {/* Connection + Realtime status banner */}
         <Card className="border-emerald-500/20 bg-emerald-500/5">
           <CardContent className="p-3 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
@@ -138,26 +238,37 @@ const Index = () => {
                 Conectado à sua conta bancária
               </span>
             </div>
-            <button
-              onClick={() => fetchBalances(true)}
-              disabled={isRefreshing || isFetching}
-              className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
-              title="Atualizar"
-              data-testid="button-refresh"
-            >
-              <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
-            </button>
+            <div className="flex items-center gap-3">
+              {realtimeOk && (
+                <div
+                  className="flex items-center gap-1 text-xs text-emerald-400/80"
+                  title="Atualizações em tempo real ativas"
+                  data-testid="status-realtime"
+                >
+                  <Radio className="h-3 w-3" />
+                  <span className="hidden sm:inline">Ao vivo</span>
+                </div>
+              )}
+              <button
+                onClick={() => { fetchBalances(true); fetchTransactions(); }}
+                disabled={isRefreshing || isFetching}
+                className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
+                title="Atualizar"
+                data-testid="button-refresh"
+              >
+                <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+              </button>
+            </div>
           </CardContent>
         </Card>
 
-        {/* Last updated */}
         {lastUpdated && !isFetching && (
           <p className="text-xs text-muted-foreground/60 text-center -mt-3">
             Atualizado às {formatTime(lastUpdated)}
           </p>
         )}
 
-        {/* Boxes */}
+        {/* 3 Boxes */}
         <div className="space-y-3">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Suas Caixas
@@ -189,44 +300,68 @@ const Index = () => {
           })}
         </div>
 
-        {/* Transactions */}
+        {/* Activity feed */}
         <div className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Últimas Transações
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Atividades Recentes
+            </p>
+            {realtimeOk && (
+              <span className="text-xs text-emerald-400/70 flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 inline-block animate-pulse" />
+                Tempo real
+              </span>
+            )}
+          </div>
+
           {transactions.length === 0 ? (
-            <div className="rounded-lg bg-card border border-border p-6 text-center space-y-1">
-              <p className="text-sm font-medium text-foreground">Aguardando movimentações</p>
-              <p className="text-xs text-muted-foreground">
-                Quando um Pix for recebido e processado pelo backend, ele aparecerá aqui automaticamente.
+            <div className="rounded-xl bg-card border border-border p-6 text-center space-y-2">
+              <div className="mx-auto h-10 w-10 rounded-full bg-muted flex items-center justify-center">
+                <ArrowDownLeft className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <p className="text-sm font-medium text-foreground">Aguardando primeiro Pix</p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Envie um POST para{" "}
+                <code className="bg-muted text-primary px-1 py-0.5 rounded text-[10px]">
+                  /api/v1/webhook/pix
+                </code>{" "}
+                e as caixas atualizam sozinhas.
               </p>
             </div>
           ) : (
             <div className="space-y-2">
-              {transactions.slice(0, 8).map((tx) => (
-                <div
-                  key={tx.id}
-                  className="flex items-center justify-between rounded-lg bg-card border border-border p-3"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`h-8 w-8 rounded-full flex items-center justify-center ${
-                      tx.type === "in" ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive"
-                    }`}>
-                      {tx.type === "in"
-                        ? <ArrowDownLeft className="h-4 w-4" />
-                        : <ArrowUpRight className="h-4 w-4" />
-                      }
+              {transactions.slice(0, 10).map((tx) => {
+                const meta = CATEGORY_META[tx.category] ?? {
+                  label: tx.category,
+                  icon: <ArrowDownLeft className="h-4 w-4" />,
+                };
+                return (
+                  <div
+                    key={tx.id}
+                    className="flex items-center justify-between rounded-xl bg-card border border-border p-3 gap-3"
+                    data-testid={`tx-item-${tx.id}`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-9 w-9 rounded-full bg-primary/15 text-primary flex items-center justify-center shrink-0">
+                        {meta.icon}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-foreground truncate">
+                          {tx.description || "Pix Recebido"}
+                        </p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs text-primary font-medium">{meta.label}</span>
+                          <span className="text-muted-foreground/40 text-xs">·</span>
+                          <span className="text-xs text-muted-foreground">{formatTxDate(tx.created_at)}</span>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{tx.description}</p>
-                      <p className="text-xs text-muted-foreground">{tx.date}</p>
-                    </div>
+                    <span className="text-sm font-bold text-primary shrink-0">
+                      +{formatCurrency(tx.amount)}
+                    </span>
                   </div>
-                  <span className={`text-sm font-semibold ${tx.type === "in" ? "text-primary" : "text-destructive"}`}>
-                    {tx.type === "in" ? "+" : ""}{formatCurrency(tx.amount)}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

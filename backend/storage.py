@@ -78,7 +78,6 @@ def upsert_goals(user_id: str, salary_goal: float, bills_goal: float, emergency_
 
 
 def save_consent(user_id: str) -> bool:
-    """Save LGPD consent. Returns True if saved to DB, False if column doesn't exist (fallback to client)."""
     sb = get_supabase()
     try:
         sb.table("user_balances").upsert({
@@ -138,3 +137,56 @@ def save_balances(user_id: str, balance: BoxBalance) -> None:
     except Exception as e:
         logger.error(f"Supabase save_balances error for '{user_id}': {e}")
         raise HTTPException(status_code=503, detail=f"Erro ao salvar saldos no banco: {e}")
+
+
+def is_transaction_processed(external_id: str) -> bool:
+    """Return True if a transaction with this external_id already exists (idempotency guard)."""
+    sb = get_supabase()
+    try:
+        res = sb.table("transactions").select("id").eq("external_id", external_id).limit(1).execute()
+        return len(res.data) > 0
+    except Exception as e:
+        logger.warning(f"Could not check idempotency for external_id '{external_id}': {e}")
+        return False
+
+
+def log_transaction(
+    user_id: str,
+    amount: float,
+    category: str,
+    description: str,
+    external_id: str | None = None,
+) -> None:
+    """Insert a single row into the transactions table."""
+    sb = get_supabase()
+    row: dict = {
+        "user_id": user_id,
+        "amount": round(amount, 2),
+        "category": category,
+        "description": description,
+    }
+    if external_id:
+        row["external_id"] = external_id
+
+    try:
+        sb.table("transactions").insert(row).execute()
+        logger.info(f"Transaction logged: user={user_id} category={category} amount={amount}")
+    except Exception as e:
+        logger.warning(f"Could not log transaction for '{user_id}': {e}. Continuing without log.")
+
+
+def get_recent_transactions(user_id: str, limit: int = 10) -> list:
+    sb = get_supabase()
+    try:
+        res = (
+            sb.table("transactions")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return res.data or []
+    except Exception as e:
+        logger.warning(f"Could not fetch transactions for '{user_id}': {e}")
+        return []

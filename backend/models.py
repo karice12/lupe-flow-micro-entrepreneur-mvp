@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
 
 class PixRequest(BaseModel):
@@ -45,3 +45,33 @@ class UserStatusResponse(BaseModel):
     salary_goal: Optional[float] = None
     bills_goal: Optional[float] = None
     emergency_goal: Optional[float] = None
+
+
+class WebhookPixRequest(BaseModel):
+    valor: float
+    descricao: str
+    id_transacao_bancaria: str
+
+
+class WebhookPixResponse(BaseModel):
+    status: str
+    message: str
+    idempotent: bool
+    salary: Optional[float] = None
+    bills: Optional[float] = None
+    emergency: Optional[float] = None
+    overflow: Optional[float] = None
+
+
+class TransactionItem(BaseModel):
+    id: str
+    user_id: str
+    amount: float
+    category: str
+    description: Optional[str] = None
+    external_id: Optional[str] = None
+    created_at: str
+
+
+class TransactionsResponse(BaseModel):
+    transactions: List[TransactionItem]
