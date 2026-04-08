@@ -32,6 +32,7 @@ const formatCurrency = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 const Index = () => {
+  const navigate = useNavigate();
   const [boxes, setBoxes] = useState<BoxState[]>([
     { name: "Salário", accumulated: 0, goal: 3000, icon: <Wallet className="h-5 w-5" /> },
     { name: "Contas", accumulated: 0, goal: 1500, icon: <Receipt className="h-5 w-5" /> },
