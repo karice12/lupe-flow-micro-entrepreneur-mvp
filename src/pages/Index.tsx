@@ -1,9 +1,10 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Wallet, ShieldCheck, Receipt, ArrowDownLeft, ArrowUpRight, Zap } from "lucide-react";
+import { Wallet, ShieldCheck, Receipt, ArrowDownLeft, ArrowUpRight, Zap, LogOut } from "lucide-react";
 import { toast } from "sonner";
 
 interface BoxState {
@@ -31,6 +32,7 @@ const formatCurrency = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 const Index = () => {
+  const navigate = useNavigate();
   const [boxes, setBoxes] = useState<BoxState[]>([
     { name: "Salário", accumulated: 0, goal: 3000, icon: <Wallet className="h-5 w-5" /> },
     { name: "Contas", accumulated: 0, goal: 1500, icon: <Receipt className="h-5 w-5" /> },
@@ -101,9 +103,18 @@ const Index = () => {
               Lupe Flow
             </h1>
           </div>
-          <div className="text-right">
-            <p className="text-xs text-muted-foreground">Saldo disponível</p>
-            <p className="text-lg font-bold text-foreground">{formatCurrency(totalBalance)}</p>
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground">Saldo disponível</p>
+              <p className="text-lg font-bold text-foreground">{formatCurrency(totalBalance)}</p>
+            </div>
+            <button
+              onClick={() => navigate("/")}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+              title="Sair"
+            >
+              <LogOut className="h-5 w-5" />
+            </button>
           </div>
         </header>
 
