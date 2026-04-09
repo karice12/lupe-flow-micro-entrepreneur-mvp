@@ -13,8 +13,6 @@ import { PixSimulator } from "@/components/PixSimulator";
 import { BoxCard } from "@/components/BoxCard";
 import { BankConnectionsCard } from "@/components/BankConnectionsCard";
 import { useUserStats } from "@/hooks/useUserStats";
-import type { SimDeltas } from "@/components/PixSimulator";
-import type { BoxState } from "@/hooks/useUserStats";
 
 const formatCurrency = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -49,34 +47,12 @@ const Index = () => {
 
   const [showPremiumModal, setShowPremiumModal] = useState(false);
 
-  // ── Simulation state (free users) ───────────────────────────────────────
-  const [simDeltas, setSimDeltas] = useState<SimDeltas | null>(null);
-
-  // Clear simulation whenever real data refreshes (premium action / realtime)
-  useEffect(() => {
-    setSimDeltas(null);
-  }, [boxes]);
+  const totalBalance = boxes.reduce((s, b) => s + b.accumulated, 0);
 
   // ── Auth guard ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (isAuthReady && !userId) navigate("/");
   }, [isAuthReady, userId, navigate]);
-
-  // ── Displayed boxes: overlay sim deltas for free users ──────────────────
-  const displayedBoxes: BoxState[] = simDeltas
-    ? boxes.map((b) => ({
-        ...b,
-        accumulated:
-          b.accumulated +
-          (b.key === "salary"
-            ? simDeltas.salary
-            : b.key === "bills"
-            ? simDeltas.bills
-            : simDeltas.emergency),
-      }))
-    : boxes;
-
-  const totalBalance = displayedBoxes.reduce((s, b) => s + b.accumulated, 0);
 
   const handleVerTudo = () => {
     if (!isPremium) {
@@ -106,10 +82,8 @@ const Index = () => {
           </div>
           <div className="flex items-center gap-3">
             <div className="text-right">
-              <p className="text-xs text-muted-foreground">
-                {simDeltas ? "Saldo simulado" : "Saldo total"}
-              </p>
-              <p className={`text-lg font-bold ${simDeltas ? "text-amber-400" : "text-foreground"}`}>
+              <p className="text-xs text-muted-foreground">Saldo total</p>
+              <p className="text-lg font-bold text-foreground">
                 {isFetching
                   ? <span className="text-muted-foreground text-sm animate-pulse">Carregando...</span>
                   : formatCurrency(totalBalance)
@@ -169,7 +143,7 @@ const Index = () => {
                 </div>
               )}
               <button
-                onClick={() => { setSimDeltas(null); fetchBalances(true); fetchTransactions(); }}
+                onClick={() => { fetchBalances(true); fetchTransactions(); }}
                 disabled={isRefreshing || isFetching}
                 className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
                 title="Atualizar"
@@ -183,17 +157,14 @@ const Index = () => {
 
         {lastUpdated && !isFetching && (
           <p className="text-xs text-muted-foreground/60 text-center -mt-2">
-            {simDeltas ? "Simulação ativa · " : ""}Atualizado às {formatTime(lastUpdated)}
+            Atualizado às {formatTime(lastUpdated)}
           </p>
         )}
 
-        {/* ── Pix Simulator ──────────────────────────────────────────── */}
+        {/* ── PIX Entry / Paywall ─────────────────────────────────────── */}
         <PixSimulator
           userId={userId}
           isPremium={isPremium}
-          hasSimulation={simDeltas !== null}
-          onSimulateLocal={(deltas) => setSimDeltas(deltas)}
-          onClearSimulation={() => setSimDeltas(null)}
           onRequestPremium={() => setShowPremiumModal(true)}
         />
 
@@ -204,13 +175,13 @@ const Index = () => {
           onRequestPremium={() => setShowPremiumModal(true)}
         />
 
-        {/* ── 3 Boxes with Donut Charts ───────────────────────────────── */}
+        {/* ── 3 Boxes ─────────────────────────────────────────────────── */}
         <div className="space-y-3">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            {simDeltas ? "Suas Caixas (simulação)" : "Suas Caixas"}
+            Suas Caixas
           </p>
-          {displayedBoxes.map(({ key, ...boxProps }) => (
-            <BoxCard key={key} {...boxProps} isLoading={isFetching} isSimulated={simDeltas !== null} />
+          {boxes.map(({ key, ...boxProps }) => (
+            <BoxCard key={key} {...boxProps} isLoading={isFetching} />
           ))}
         </div>
 
@@ -245,7 +216,7 @@ const Index = () => {
               </div>
               <p className="text-sm font-medium text-foreground">Aguardando primeiro Pix</p>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Use o simulador acima para ver como sua entrada seria dividida.
+                Conecte seu banco ou registre uma entrada para ver a distribuição.
               </p>
             </div>
           ) : (
