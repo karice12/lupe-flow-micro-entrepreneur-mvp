@@ -13,7 +13,7 @@ declare global {
       onSuccess: (data: { item: { id: string; connector: { name: string } } }) => void;
       onError: (data: { message: string }) => void;
       onClose: () => void;
-    }) => { open: () => void };
+    }) => { init: () => void };
   }
 }
 
@@ -105,7 +105,11 @@ function loadPluggyScript(): Promise<void> {
   return new Promise((resolve, reject) => {
     if (window.PluggyConnect) { resolve(); return; }
     const existing = document.querySelector(`script[src="${PLUGGY_SCRIPT_URL}"]`);
-    if (existing) { existing.addEventListener("load", () => resolve()); return; }
+    if (existing) {
+      existing.addEventListener("load", () => resolve());
+      existing.addEventListener("error", () => reject(new Error("Falha ao carregar o widget Pluggy.")));
+      return;
+    }
     const script = document.createElement("script");
     script.src = PLUGGY_SCRIPT_URL;
     script.async = true;
@@ -188,7 +192,7 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
         },
       });
 
-      widgetRef.current.open();
+      widgetRef.current.init();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Erro ao abrir o widget.";
       toast.error(msg);

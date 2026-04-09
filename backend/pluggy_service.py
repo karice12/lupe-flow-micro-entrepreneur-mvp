@@ -15,10 +15,7 @@ from fastapi import HTTPException
 logger = logging.getLogger(__name__)
 
 PLUGGY_BASE_URL = "https://api.pluggy.ai"
-FRONTEND_ORIGIN = os.getenv(
-    "FRONTEND_URL",
-    "https://bab74352-1261-483b-8427-3cb267a7e4fd-00-3eb0av1fpy01n.spock.replit.dev",
-).strip()
+FRONTEND_ORIGIN = os.getenv("FRONTEND_URL", "").strip()
 
 
 def _get_credentials() -> tuple[str, str]:
@@ -38,10 +35,13 @@ def _get_credentials() -> tuple[str, str]:
 
 def _get_api_key(client_id: str, client_secret: str) -> str:
     """Authenticate with Pluggy and return a short-lived API key."""
+    headers = {}
+    if FRONTEND_ORIGIN:
+        headers["Origin"] = FRONTEND_ORIGIN
     try:
         response = httpx.post(
             f"{PLUGGY_BASE_URL}/auth",
-            headers={"Origin": FRONTEND_ORIGIN},
+            headers=headers,
             json={"clientId": client_id, "clientSecret": client_secret},
             timeout=10.0,
         )
@@ -82,12 +82,12 @@ def generate_connect_token(user_id: str) -> str:
     api_key = _get_api_key(client_id, client_secret)
 
     try:
+        ct_headers: dict = {"X-API-KEY": api_key}
+        if FRONTEND_ORIGIN:
+            ct_headers["Origin"] = FRONTEND_ORIGIN
         response = httpx.post(
             f"{PLUGGY_BASE_URL}/connect_token",
-            headers={
-                "X-API-KEY": api_key,
-                "Origin": FRONTEND_ORIGIN,
-            },
+            headers=ct_headers,
             json={"clientUserId": user_id},
             timeout=10.0,
         )

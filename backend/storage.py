@@ -116,15 +116,23 @@ def set_premium(user_id: str, value: bool) -> None:
 def upsert_goals(user_id: str, salary_goal: float, bills_goal: float, emergency_goal: float) -> None:
     sb = get_supabase()
     try:
-        sb.table("user_balances").upsert({
-            "user_id": user_id,
-            "salary_goal": salary_goal,
-            "bills_goal": bills_goal,
-            "emergency_goal": emergency_goal,
-            "salary": 0.0,
-            "bills": 0.0,
-            "emergency": 0.0,
-        }, on_conflict="user_id", ignore_duplicates=False).execute()
+        check = sb.table("user_balances").select("user_id").eq("user_id", user_id).limit(1).execute()
+        if check.data:
+            sb.table("user_balances").update({
+                "salary_goal": salary_goal,
+                "bills_goal": bills_goal,
+                "emergency_goal": emergency_goal,
+            }).eq("user_id", user_id).execute()
+        else:
+            sb.table("user_balances").insert({
+                "user_id": user_id,
+                "salary_goal": salary_goal,
+                "bills_goal": bills_goal,
+                "emergency_goal": emergency_goal,
+                "salary": 0.0,
+                "bills": 0.0,
+                "emergency": 0.0,
+            }).execute()
         logger.info(f"Goals saved for user '{user_id}'.")
     except HTTPException:
         raise
