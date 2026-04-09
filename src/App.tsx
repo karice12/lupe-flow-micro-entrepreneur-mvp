@@ -8,6 +8,8 @@ import Auth from "./pages/Auth.tsx";
 import Onboarding from "./pages/Onboarding.tsx";
 import Dashboard from "./pages/Index.tsx";
 import Transactions from "./pages/Transactions.tsx";
+import PaymentSuccess from "./pages/PaymentSuccess.tsx";
+import PaymentFailure from "./pages/PaymentFailure.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -24,6 +26,8 @@ const App = () => (
             <Route path="/onboarding" element={<Onboarding />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/transactions" element={<Transactions />} />
+            <Route path="/pagamento-sucesso" element={<PaymentSuccess />} />
+            <Route path="/pagamento-falha" element={<PaymentFailure />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

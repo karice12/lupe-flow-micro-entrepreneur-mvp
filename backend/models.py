@@ -97,3 +97,12 @@ class BankConnectionListResponse(BaseModel):
 class AddBankConnectionRequest(BaseModel):
     bank_name: str
     provider_id: Optional[str] = None
+
+
+class CheckoutSessionRequest(BaseModel):
+    plan_cycle: str
+    user_id: str
+
+
+class CheckoutSessionResponse(BaseModel):
+    checkout_url: str

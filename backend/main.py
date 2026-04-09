@@ -1,13 +1,13 @@
 import os
 import logging
-from fastapi import FastAPI, HTTPException, Query, Depends
+from fastapi import FastAPI, HTTPException, Query, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-
 from backend.models import (
     PixRequest, PixResponse, UserGoalsRequest, UserStatusResponse,
     WebhookPixRequest, WebhookPixResponse, TransactionsResponse, TransactionItem,
     BankConnection, BankConnectionListResponse, AddBankConnectionRequest,
+    CheckoutSessionRequest, CheckoutSessionResponse,
 )
 from backend.storage import (
     get_balances, save_balances, get_user_status, upsert_goals, save_consent,
@@ -15,6 +15,9 @@ from backend.storage import (
     list_bank_connections, add_bank_connection, deactivate_bank_connection, count_billable_units,
 )
 from backend.auth import get_token_user_id, assert_owns_resource
+from backend.stripe_billing import (
+    create_checkout_session, construct_webhook_event,
+)
 
 load_dotenv()
 
@@ -402,3 +405,107 @@ def dividir_pix(
         allocated_emergency=allocs["alloc_emergency"],
         overflow=allocs["overflow"],
     )
+
+
+# ─── Stripe Checkout (write — JWT required) ───────────────────────────────────
+
+@app.post("/checkout/create-session", response_model=CheckoutSessionResponse)
+def create_stripe_session(
+    req: CheckoutSessionRequest,
+    token_user_id: str = Depends(get_token_user_id),
+):
+    """
+    Create a Stripe Checkout Session for the authenticated user.
+    Calculates total based on plan_cycle and current billable bank connections.
+    Returns the Stripe-hosted checkout URL for client-side redirect.
+    """
+    assert_owns_resource(token_user_id, req.user_id)
+
+    if req.plan_cycle not in ("monthly", "yearly"):
+        raise HTTPException(
+            status_code=422,
+            detail="plan_cycle deve ser 'monthly' ou 'yearly'.",
+        )
+
+    extra_banks = count_billable_units(req.user_id)
+
+    try:
+        checkout_url = create_checkout_session(req.user_id, req.plan_cycle, extra_banks)
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logger.error(f"Stripe session error for user '{req.user_id}': {e}", exc_info=True)
+        raise HTTPException(status_code=503, detail=f"Erro ao criar sessão de pagamento: {e}")
+
+    return CheckoutSessionResponse(checkout_url=checkout_url)
+
+
+# ─── Stripe Webhook (server-to-server — no user JWT) ─────────────────────────
+
+@app.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    """
+    Receives Stripe webhook events (checkout.session.completed, etc.).
+    Verifies the signature with STRIPE_WEBHOOK_SECRET, then activates premium
+    for the user referenced in client_reference_id / metadata.user_id.
+    This endpoint is called by Stripe servers — not by the frontend.
+    """
+    payload    = await request.body()
+    sig_header = request.headers.get("Stripe-Signature", "")
+
+    try:
+        event = construct_webhook_event(payload, sig_header)
+    except ValueError as e:
+        logger.warning(f"Stripe webhook config error: {e}")
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logger.warning(f"Stripe webhook signature invalid: {e}")
+        raise HTTPException(status_code=400, detail="Assinatura do webhook inválida.")
+
+    event_type = event.get("type", "")
+    logger.info(f"Stripe webhook received: type='{event_type}'")
+
+    if event_type == "checkout.session.completed":
+        session    = event["data"]["object"]
+        payment_ok = session.get("payment_status") == "paid"
+        user_id    = (
+            session.get("client_reference_id")
+            or (session.get("metadata") or {}).get("user_id")
+        )
+
+        if payment_ok and user_id:
+            try:
+                plan_cycle = (session.get("metadata") or {}).get("plan_cycle", "monthly")
+                set_premium(user_id, True)
+                # Persist plan_cycle if available
+                sb = None
+                try:
+                    from backend.storage import get_supabase
+                    sb = get_supabase()
+                    sb.table("user_balances") \
+                      .update({"plan_cycle": plan_cycle}) \
+                      .eq("user_id", user_id) \
+                      .execute()
+                except Exception as sb_e:
+                    logger.warning(f"Could not persist plan_cycle for '{user_id}': {sb_e}")
+
+                logger.info(f"Premium activated via Stripe webhook: user='{user_id}' plan='{plan_cycle}'")
+            except Exception as e:
+                logger.error(f"Failed to activate premium for '{user_id}' via webhook: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail="Erro ao ativar premium.")
+        else:
+            logger.warning(
+                f"checkout.session.completed ignored: payment_ok={payment_ok} user_id={user_id}"
+            )
+
+    elif event_type == "customer.subscription.deleted":
+        session = event["data"]["object"]
+        user_id = (session.get("metadata") or {}).get("user_id")
+        if user_id:
+            try:
+                set_premium(user_id, False)
+                logger.info(f"Premium cancelled via Stripe webhook: user='{user_id}'")
+            except Exception as e:
+                logger.error(f"Failed to cancel premium for '{user_id}' via webhook: {e}", exc_info=True)
+
+    return {"received": True}
