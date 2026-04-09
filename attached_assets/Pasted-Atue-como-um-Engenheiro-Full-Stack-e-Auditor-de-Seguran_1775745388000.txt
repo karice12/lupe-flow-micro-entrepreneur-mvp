@@ -1,0 +1,30 @@
+Atue como um Engenheiro Full Stack e Auditor de Segurança. Objetivo: Sincronizar o estado atual do projeto e listar pendências técnicas sem realizar alterações de código agora.
+
+Analise o repositório e confirme se o projeto reflete exatamente os seguintes marcos técnicos:
+
+1. O que já foi feito (Status Check):
+
+Backend & Auth: Integração com Supabase funcional usando SERVICE_ROLE_KEY no backend. set_premium corrigido para realizar upsert apenas no campo is_premium, sem zerar os saldos de salary, bills e emergency.
+
+Pix Simulator (Lead Magnet): O simulador no frontend funciona de forma pura (local) para usuários Free, alterando os BoxCards para a cor âmbar via estado simDeltas no Index.tsx.
+
+Stripe Engine (stripe_billing.py): Lógica de checkout dual implementada. Plano Mensal em mode: subscription e Plano Anual em mode: payment para permitir parcelamento (installments) no Brasil.
+
+Persistência de Metadata: O user_id está sendo enviado tanto em subscription_data quanto em payment_intent_data para garantir que o Webhook ative o usuário correto.
+
+2. O que NÃO deve ser alterado (Regras de Ouro):
+
+Não altere a lógica de parcelamento do Stripe; ela foi validada para o mercado brasileiro.
+
+Não refatore componentes de UI (CSS/Layout) a menos que solicitado.
+
+3. Identificação de Gaps de Produção (To-Do List):
+Valide se ainda precisamos realizar os seguintes pontos de segurança e me responda apenas com "Sim" ou "Não" para cada um:
+
+Validação de JWT: Os endpoints de escrita (/dividir-pix, /metas, /premium) já possuem verificação do token JWT do Supabase para impedir que um user_id manipule dados de outro?
+
+Hardening de RLS: As políticas de Row Level Security no banco de dados já foram trocadas de USING (true) para USING (auth.uid()::text = user_id)?
+
+Webhook Security: O endpoint /webhook/stripe está validando a assinatura HMAC usando a STRIPE_WEBHOOK_SECRET?
+
+Não execute nenhuma alteração agora. Apenas retorne o relatório de auditoria confirmando o que você "enxergou" no código.
