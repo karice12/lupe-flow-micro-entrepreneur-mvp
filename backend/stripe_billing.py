@@ -54,53 +54,35 @@ def _get_frontend_url() -> str:
 
 def _build_line_items(plan_cycle: str, extra_banks: int) -> list[dict]:
     """
-    Build the Stripe line_items list for a checkout session.
+    Build line_items for the checkout session.
 
-    Args:
-        plan_cycle:  'monthly' or 'yearly'
-        extra_banks: Number of additional banks beyond the 1 included in base plan.
-
-    Returns:
-        List of price_data dicts ready for stripe.checkout.Session.create().
+    - 'monthly' → mode=subscription → price_data includes 'recurring'
+    - 'yearly'  → mode=payment      → price_data is one-time (no 'recurring')
     """
-    is_yearly = plan_cycle == "yearly"
-    interval  = "year" if is_yearly else "month"
-
+    is_yearly   = plan_cycle == "yearly"
     base_cents  = BASE_YEARLY_BRL_CENTS  if is_yearly else BASE_MONTHLY_BRL_CENTS
     extra_cents = EXTRA_BANK_YEARLY_CENTS if is_yearly else EXTRA_BANK_MONTHLY_CENTS
-
     base_label  = (
         "Lupe Flow Premium — Plano Anual (7% off)"
         if is_yearly else
         "Lupe Flow Premium — Plano Mensal"
     )
 
-    items = [
-        {
-            "price_data": {
-                "currency": "brl",
-                "unit_amount": base_cents,
-                "recurring": {"interval": interval},
-                "product_data": {"name": base_label},
-            },
-            "quantity": 1,
+    def price_data(unit_amount: int, name: str) -> dict:
+        pd: dict = {
+            "currency":     "brl",
+            "unit_amount":  unit_amount,
+            "product_data": {"name": name},
         }
-    ]
+        if not is_yearly:
+            pd["recurring"] = {"interval": "month"}
+        return pd
+
+    items = [{"price_data": price_data(base_cents, base_label), "quantity": 1}]
 
     if extra_banks > 0:
-        items.append(
-            {
-                "price_data": {
-                    "currency": "brl",
-                    "unit_amount": extra_cents,
-                    "recurring": {"interval": interval},
-                    "product_data": {
-                        "name": f"Banco adicional — {'Anual' if is_yearly else 'Mensal'}"
-                    },
-                },
-                "quantity": extra_banks,
-            }
-        )
+        extra_label = f"Banco adicional — {'Anual' if is_yearly else 'Mensal'}"
+        items.append({"price_data": price_data(extra_cents, extra_label), "quantity": extra_banks})
 
     return items
 
@@ -127,49 +109,42 @@ def create_checkout_session(
     """
     _get_stripe_client()
 
-    base_url  = _get_frontend_url()
+    base_url   = _get_frontend_url()
     line_items = _build_line_items(plan_cycle, extra_banks)
+    is_yearly  = plan_cycle == "yearly"
 
-    # Propagate user_id into the Subscription object so that
-    # the customer.subscription.deleted webhook can resolve the user.
-    subscription_data: dict = {
-        "metadata": {
-            "user_id":    user_id,
-            "plan_cycle": plan_cycle,
-        }
+    # yearly  → mode=payment  (one-time charge, supports card installments in BR)
+    # monthly → mode=subscription (recurring, installments not allowed by Stripe)
+    mode = "payment" if is_yearly else "subscription"
+
+    session_metadata = {
+        "user_id":     user_id,
+        "plan_cycle":  plan_cycle,
+        "extra_banks": str(extra_banks),
     }
-
-    # Installments: only meaningful for yearly (one-time larger charge).
-    # enabled=True surfaces the installment UI on the Stripe-hosted page;
-    # plan counts and interest rules are governed by the Stripe Dashboard
-    # (Brazil cartão parcelado). For 1-3 installments the merchant absorbs
-    # the fee (commitment_count=0); beyond 3 the Dashboard rate applies.
-    payment_method_options: dict = {}
-    if plan_cycle == "yearly":
-        payment_method_options = {
-            "card": {
-                "installments": {
-                    "enabled": True,
-                }
-            }
-        }
 
     create_kwargs: dict = {
         "payment_method_types": ["card"],
         "line_items":           line_items,
-        "mode":                 "subscription",
+        "mode":                 mode,
         "success_url":          f"{base_url}/pagamento-sucesso?session_id={{CHECKOUT_SESSION_ID}}",
         "cancel_url":           f"{base_url}/pagamento-falha",
         "client_reference_id":  user_id,
-        "subscription_data":    subscription_data,
-        "metadata": {
-            "user_id":     user_id,
-            "plan_cycle":  plan_cycle,
-            "extra_banks": str(extra_banks),
-        },
+        "metadata":             session_metadata,
     }
-    if payment_method_options:
-        create_kwargs["payment_method_options"] = payment_method_options
+
+    if is_yearly:
+        # One-time payment: enable card installments (Brazil cartão parcelado).
+        # installments UI and interest tiers are configured in Stripe Dashboard.
+        create_kwargs["payment_method_options"] = {
+            "card": {"installments": {"enabled": True}}
+        }
+        # Carry user_id into the PaymentIntent so future lookups are possible.
+        create_kwargs["payment_intent_data"] = {"metadata": session_metadata}
+    else:
+        # Recurring subscription: propagate user_id into the Subscription object
+        # so customer.subscription.deleted webhook can resolve the user.
+        create_kwargs["subscription_data"] = {"metadata": session_metadata}
 
     session = stripe.checkout.Session.create(**create_kwargs)
 
