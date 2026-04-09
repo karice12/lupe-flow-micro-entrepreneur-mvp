@@ -30,7 +30,10 @@ const Auth = () => {
   const routeAuthenticatedUser = async (uid: string) => {
     try {
       const res = await fetch(`/api/usuario/${encodeURIComponent(uid)}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        navigate("/dashboard");
+        return;
+      }
       const data = await res.json();
 
       if (data.has_goals) {
@@ -54,7 +57,7 @@ const Auth = () => {
 
       navigate(destination);
     } catch {
-      // silent — don't block the UI if status check fails
+      navigate("/dashboard");
     }
   };
 
