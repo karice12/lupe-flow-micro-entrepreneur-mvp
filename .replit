@@ -72,3 +72,6 @@ externalPort = 8000
 [userenv.shared]
 SUPABASE_URL = "https://zdqlsuyxynupmutxxcij.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_yBrNSS_AQ1s0jLS746BHcA_UjvqrFZ-"
+
+[userenv.production]
+FRONTEND_URL = "https://lupe-flow-micro-entrepreneur-mvp-1--KarolPelegrino.replit.app"
