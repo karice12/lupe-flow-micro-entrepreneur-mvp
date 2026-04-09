@@ -9,10 +9,11 @@ declare global {
   interface Window {
     PluggyConnect: new (config: {
       connectToken: string;
+      includeSandbox?: boolean;
       onSuccess: (data: { item: { id: string; connector: { name: string } } }) => void;
       onError: (data: { message: string }) => void;
       onClose: () => void;
-    }) => { init: () => void };
+    }) => { open: () => void };
   }
 }
 
@@ -33,7 +34,7 @@ interface BankConnectionsCardProps {
 }
 
 const EXTRA_BANK_COST = 7.99;
-const PLUGGY_SCRIPT_URL = "https://cdn.pluggy.ai/pluggy-connect/index.js";
+const PLUGGY_SCRIPT_URL = "https://cdn.pluggy.ai/pluggy-connect/v2.8.2/pluggy-connect.js";
 
 const formatDate = (iso: string) => {
   try {
@@ -163,9 +164,11 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
     try {
       await loadPluggyScript();
       const connectToken = await fetchPluggyToken();
+      console.log("Pluggy connect token recebido:", connectToken ? `${connectToken.slice(0, 20)}...` : "VAZIO");
 
       widgetRef.current = new window.PluggyConnect({
         connectToken,
+        includeSandbox: true,
         onSuccess: async ({ item }) => {
           const bankName = item.connector?.name || "Banco conectado";
           try {
@@ -185,7 +188,7 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
         },
       });
 
-      widgetRef.current.init();
+      widgetRef.current.open();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Erro ao abrir o widget.";
       toast.error(msg);
