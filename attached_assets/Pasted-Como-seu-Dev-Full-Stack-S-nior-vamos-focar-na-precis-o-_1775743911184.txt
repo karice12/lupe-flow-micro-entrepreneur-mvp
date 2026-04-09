@@ -1,0 +1,50 @@
+Como seu Dev Full Stack Sênior, vamos focar na precisão. O Replit não pode "alucinar" aqui porque mexer com parcelamento e juros no Stripe exige uma configuração específica de Installments (exclusiva para o Brasil) ou o uso de Payment Element.
+
+No Stripe, o parcelamento (Installments) não é apenas uma flag no código; ele depende de como o Payment Intent é gerado.
+
+🚀 Prompt de Implementação Cirúrgica (Copie e cole no Replit)
+Atue como Engenheiro de Software Sênior especializado em Stripe Integration.
+
+Precisamos atualizar o fluxo de Checkout Anual para suportar parcelamento (Installments) seguindo a regra de negócio: até 3x sem juros e de 4x até 12x com juros.
+
+Tarefas:
+
+1. Configuração do Parcelamento (stripe_billing.py):
+
+Na função que cria a checkout.session para o plano anual, adicione o parâmetro payment_method_options.
+
+Configure o card para aceitar installments.
+
+Regra de Parcelamento:
+
+enabled: True
+
+No plano anual (valor total), configure o plano de parcelas:
+
+Até 3 parcelas: subtotal_contribution (sem juros para o cliente).
+
+De 4 a 12 parcelas: customer_contribution (juros repassados ao cliente).
+
+Dica técnica: Use o payment_method_types=['card'] e defina installments dentro de payment_method_options.
+
+2. Correção Crítica do Webhook (Cancelamento):
+
+Corrija o handler customer.subscription.deleted no main.py.
+
+Problema: O objeto Subscription não traz o metadata da sessão automaticamente.
+
+Solução: No momento do checkout.session.completed, salve o user_id no campo metadata da Subscription (não apenas da Session) ou use o client_reference_id para garantir que o cancelamento encontre o usuário correto no banco para executar set_premium(user_id, False).
+
+3. UI/UX (PremiumModal.tsx):
+
+Atualize o texto do plano anual no frontend para: "Assinatura Anual — Parcele em até 3x sem juros ou 12x".
+
+Garanta que o botão de checkout redirecione para a sessão que agora permite o parcelamento.
+
+Critérios de Aceite:
+
+O checkout do Stripe no Brasil deve mostrar agora o dropdown de parcelas (1x até 12x).
+
+O webhook de cancelamento deve conseguir identificar o user_id e desativar o premium corretamente.
+
+Nenhuma alteração na lógica de divisão de PIX ou saldo.

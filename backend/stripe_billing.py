@@ -130,19 +130,48 @@ def create_checkout_session(
     base_url  = _get_frontend_url()
     line_items = _build_line_items(plan_cycle, extra_banks)
 
-    session = stripe.checkout.Session.create(
-        payment_method_types=["card"],
-        line_items=line_items,
-        mode="subscription",
-        success_url=f"{base_url}/pagamento-sucesso?session_id={{CHECKOUT_SESSION_ID}}",
-        cancel_url=f"{base_url}/pagamento-falha",
-        client_reference_id=user_id,
-        metadata={
+    # Propagate user_id into the Subscription object so that
+    # the customer.subscription.deleted webhook can resolve the user.
+    subscription_data: dict = {
+        "metadata": {
             "user_id":    user_id,
             "plan_cycle": plan_cycle,
+        }
+    }
+
+    # Installments: only meaningful for yearly (one-time larger charge).
+    # enabled=True surfaces the installment UI on the Stripe-hosted page;
+    # plan counts and interest rules are governed by the Stripe Dashboard
+    # (Brazil cartão parcelado). For 1-3 installments the merchant absorbs
+    # the fee (commitment_count=0); beyond 3 the Dashboard rate applies.
+    payment_method_options: dict = {}
+    if plan_cycle == "yearly":
+        payment_method_options = {
+            "card": {
+                "installments": {
+                    "enabled": True,
+                }
+            }
+        }
+
+    create_kwargs: dict = {
+        "payment_method_types": ["card"],
+        "line_items":           line_items,
+        "mode":                 "subscription",
+        "success_url":          f"{base_url}/pagamento-sucesso?session_id={{CHECKOUT_SESSION_ID}}",
+        "cancel_url":           f"{base_url}/pagamento-falha",
+        "client_reference_id":  user_id,
+        "subscription_data":    subscription_data,
+        "metadata": {
+            "user_id":     user_id,
+            "plan_cycle":  plan_cycle,
             "extra_banks": str(extra_banks),
         },
-    )
+    }
+    if payment_method_options:
+        create_kwargs["payment_method_options"] = payment_method_options
+
+    session = stripe.checkout.Session.create(**create_kwargs)
 
     logger.info(
         f"Stripe session created: user='{user_id}' plan='{plan_cycle}' "
