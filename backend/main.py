@@ -8,6 +8,7 @@ from backend.models import (
     WebhookPixRequest, WebhookPixResponse, TransactionsResponse, TransactionItem,
     BankConnection, BankConnectionListResponse, AddBankConnectionRequest,
     CheckoutSessionRequest, CheckoutSessionResponse,
+    PluggyTokenResponse,
 )
 from backend.storage import (
     get_balances, save_balances, get_user_status, upsert_goals, save_consent,
@@ -18,6 +19,7 @@ from backend.auth import get_token_user_id, assert_owns_resource
 from backend.stripe_billing import (
     create_checkout_session, construct_webhook_event,
 )
+from backend.pluggy_service import generate_connect_token
 
 load_dotenv()
 
@@ -509,3 +511,18 @@ async def stripe_webhook(request: Request):
                 logger.error(f"Failed to cancel premium for '{user_id}' via webhook: {e}", exc_info=True)
 
     return {"received": True}
+
+
+# ─── Pluggy Open Banking — Connect Token (JWT required) ───────────────────────
+
+@app.get("/pluggy/token", response_model=PluggyTokenResponse)
+def get_pluggy_token(
+    token_user_id: str = Depends(get_token_user_id),
+):
+    """
+    Generate a Pluggy Connect Token for the authenticated user.
+    The token is consumed by the Pluggy Widget on the frontend to link bank accounts.
+    JWT must be valid — the authenticated user's UUID is sent as clientUserId to Pluggy.
+    """
+    connect_token = generate_connect_token(token_user_id)
+    return PluggyTokenResponse(connect_token=connect_token)

@@ -106,3 +106,7 @@ class CheckoutSessionRequest(BaseModel):
 
 class CheckoutSessionResponse(BaseModel):
     checkout_url: str
+
+
+class PluggyTokenResponse(BaseModel):
+    connect_token: str
