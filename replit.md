@@ -74,11 +74,26 @@ Run scripts in order in Supabase Dashboard → SQL Editor:
 
 Secrets: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
 
-## Billing Model
+## Billing Model — Stripe
 
-- **Plano Base**: R$ 29,90/mês — inclui 1 banco conectado
-- **Banco adicional**: +R$ 7,99/mês por conexão além da primeira
-- **Pró-rata**: `count_billable_units(user_id)` conta bancos ativos em qualquer momento do mês corrente (mesmo desativados no meio do período), subtraindo 1 do total — retorna somente os extras faturáveis
+- **Plano Base Mensal**: R$ 29,90/mês — inclui 1 banco conectado
+- **Plano Base Anual**: R$ 29,90 × 12 × 0.93 ≈ R$ 333,45/ano (7% de desconto)
+- **Banco adicional**: +R$ 7,99/mês (ou +R$ 89,15/ano com desconto)
+- **Pró-rata**: `count_billable_units(user_id)` conta bancos ativos no mês corrente (mesmo inativados) menos 1 — retorna extras faturáveis incluídos no checkout
+
+### Stripe Setup
+- Secrets: `STRIPE_SECRET_KEY` (sk_test_... ou sk_live_...) e `STRIPE_WEBHOOK_SECRET` (whsec_...)
+- Webhook URL: `<domínio>/api/webhook/stripe`
+- Eventos Stripe a assinar: `checkout.session.completed`, `customer.subscription.deleted`
+- Arquivo principal: `backend/stripe_billing.py`
+
+### Payment Flow
+1. Frontend abre `PremiumModal` com toggle Mensal/Anual
+2. Ao clicar "Ativar Agora" → POST `/api/checkout/create-session` (JWT obrigatório)
+3. Backend calcula `extra_banks` via `count_billable_units`, cria Stripe Session
+4. Frontend recebe `checkout_url` e faz `window.location.href = checkout_url`
+5. Stripe redireciona para `/pagamento-sucesso?session_id=...` ou `/pagamento-falha`
+6. Stripe envia `checkout.session.completed` → `/api/webhook/stripe` → `set_premium(user_id, True)`
 
 ## Business Logic — Regra das 3 Caixas + Transbordo
 
