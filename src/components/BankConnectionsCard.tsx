@@ -1,11 +1,21 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Building2, Plus, Trash2, Loader2, Lock, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/supabase";
 
-/** A single bank connection record returned by the API. */
+declare global {
+  interface Window {
+    PluggyConnect: new (config: {
+      connectToken: string;
+      onSuccess: (data: { item: { id: string; connector: { name: string } } }) => void;
+      onError: (data: { message: string }) => void;
+      onClose: () => void;
+    }) => { init: () => void };
+  }
+}
+
 interface BankConnection {
   id: string;
   user_id: string;
@@ -17,15 +27,13 @@ interface BankConnection {
 }
 
 interface BankConnectionsCardProps {
-  /** Authenticated user's UUID */
   userId: string;
-  /** Whether the user has an active premium subscription */
   isPremium: boolean;
-  /** Callback to open the premium upgrade modal */
   onRequestPremium: () => void;
 }
 
 const EXTRA_BANK_COST = 7.99;
+const PLUGGY_SCRIPT_URL = "https://cdn.pluggy.ai/pluggy-connect/v2/index.js";
 
 const formatDate = (iso: string) => {
   try {
@@ -35,7 +43,6 @@ const formatDate = (iso: string) => {
   }
 };
 
-/** Fetches bank connections from the backend for the given user. */
 async function fetchConnections(userId: string): Promise<{ connections: BankConnection[]; billable_units: number }> {
   const token = await getAccessToken();
   if (!token) throw new Error("Sessão expirada.");
@@ -49,7 +56,6 @@ async function fetchConnections(userId: string): Promise<{ connections: BankConn
   return res.json();
 }
 
-/** Sends a DELETE request to soft-deactivate a bank connection. */
 async function deactivateConnection(userId: string, connectionId: string): Promise<void> {
   const token = await getAccessToken();
   if (!token) throw new Error("Sessão expirada.");
@@ -63,13 +69,59 @@ async function deactivateConnection(userId: string, connectionId: string): Promi
   }
 }
 
+async function fetchPluggyToken(): Promise<string> {
+  const token = await getAccessToken();
+  if (!token) throw new Error("Sessão expirada.");
+  const res = await fetch("/api/pluggy/token", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Erro ao obter token da Pluggy.");
+  }
+  const data = await res.json();
+  return data.connect_token;
+}
+
+async function savePluggyConnection(userId: string, bankName: string, providerId: string): Promise<void> {
+  const token = await getAccessToken();
+  if (!token) throw new Error("Sessão expirada.");
+  const res = await fetch(`/api/usuario/${encodeURIComponent(userId)}/banks`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ bank_name: bankName, provider_id: providerId }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Erro ao salvar conexão.");
+  }
+}
+
+function loadPluggyScript(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (window.PluggyConnect) { resolve(); return; }
+    const existing = document.querySelector(`script[src="${PLUGGY_SCRIPT_URL}"]`);
+    if (existing) { existing.addEventListener("load", () => resolve()); return; }
+    const script = document.createElement("script");
+    script.src = PLUGGY_SCRIPT_URL;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Falha ao carregar o widget Pluggy."));
+    document.head.appendChild(script);
+  });
+}
+
 export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: BankConnectionsCardProps) {
   const [connections, setConnections] = useState<BankConnection[]>([]);
   const [billableUnits, setBillableUnits] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const widgetRef = useRef<{ init: () => void } | null>(null);
 
-  /** Load connections from the API — only called for premium users. */
   const loadConnections = useCallback(async () => {
     if (!isPremium || !userId) return;
     setIsLoading(true);
@@ -89,7 +141,6 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
     loadConnections();
   }, [loadConnections]);
 
-  /** Soft-remove a bank connection by connection ID. */
   const handleRemove = async (connectionId: string, bankName: string) => {
     setRemovingId(connectionId);
     try {
@@ -101,6 +152,41 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
       toast.error(msg);
     } finally {
       setRemovingId(null);
+    }
+  };
+
+  const handleConnectBank = async () => {
+    setIsConnecting(true);
+    try {
+      await loadPluggyScript();
+      const connectToken = await fetchPluggyToken();
+
+      widgetRef.current = new window.PluggyConnect({
+        connectToken,
+        onSuccess: async ({ item }) => {
+          const bankName = item.connector?.name || "Banco conectado";
+          try {
+            await savePluggyConnection(userId, bankName, item.id);
+            toast.success(`${bankName} conectado com sucesso!`);
+            await loadConnections();
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : "Erro ao salvar conexão.";
+            toast.error(msg);
+          }
+        },
+        onError: ({ message }) => {
+          toast.error(`Erro na conexão: ${message}`);
+        },
+        onClose: () => {
+          setIsConnecting(false);
+        },
+      });
+
+      widgetRef.current.init();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Erro ao abrir o widget.";
+      toast.error(msg);
+      setIsConnecting(false);
     }
   };
 
@@ -123,7 +209,7 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
       <Card className="border-border bg-card">
         <CardContent className="p-4 space-y-4">
 
-          {/* ── Free user — show simulator upsell only ─────────────────── */}
+          {/* ── Free user — simulator upsell ───────────────────────────── */}
           {!isPremium && (
             <div className="flex flex-col items-center gap-3 py-2 text-center">
               <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
@@ -147,7 +233,7 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
             </div>
           )}
 
-          {/* ── Premium user — bank list ───────────────────────────────── */}
+          {/* ── Premium user — bank list ────────────────────────────────── */}
           {isPremium && (
             <div className="space-y-3">
 
@@ -186,7 +272,6 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    {/* Extra cost badge — first bank is included in base plan */}
                     {idx > 0 && (
                       <span className="text-[10px] font-bold text-amber-400 bg-amber-400/10 border border-amber-400/20 px-1.5 py-0.5 rounded-full">
                         +R$ 7,99
@@ -213,7 +298,7 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
                 </div>
               ))}
 
-              {/* Inactive connections (collapsed summary) */}
+              {/* Inactive connections */}
               {!isLoading && inactiveConnections.length > 0 && (
                 <div className="space-y-1.5">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
@@ -236,18 +321,20 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
                 </div>
               )}
 
-              {/* Add bank — placeholder for future Pluggy integration */}
+              {/* Connect bank button — Pluggy Widget */}
               <Button
                 variant="outline"
                 size="sm"
-                className="w-full h-9 rounded-lg text-xs gap-2 border-dashed"
-                onClick={() => toast.info("Integração com Open Finance (Pluggy) em breve!")}
+                className="w-full h-9 rounded-lg text-xs gap-2 border-dashed border-amber-400/30 hover:border-amber-400/60 hover:bg-amber-400/5 hover:text-amber-400 transition-colors"
+                onClick={handleConnectBank}
+                disabled={isConnecting}
               >
-                <Plus className="h-4 w-4" />
-                Conectar novo banco
+                {isConnecting
+                  ? <><Loader2 className="h-4 w-4 animate-spin" />Abrindo widget...</>
+                  : <><Plus className="h-4 w-4" />Conectar novo banco</>
+                }
               </Button>
 
-              {/* Billing info footer */}
               <p className="text-[10px] text-muted-foreground/60 text-center leading-relaxed">
                 1 banco incluso no plano · R$ 7,99/mês por banco adicional<br />
                 Bancos desativados no mês corrente são cobrados proporcionalmente.
