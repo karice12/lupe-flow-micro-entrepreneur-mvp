@@ -33,7 +33,7 @@ interface BankConnectionsCardProps {
 }
 
 const EXTRA_BANK_COST = 7.99;
-const PLUGGY_SCRIPT_URL = "https://cdn.pluggy.ai/pluggy-connect/v2/index.js";
+const PLUGGY_SCRIPT_URL = "https://cdn.pluggy.ai/pluggy-connect/index.js";
 
 const formatDate = (iso: string) => {
   try {
@@ -108,7 +108,10 @@ function loadPluggyScript(): Promise<void> {
     const script = document.createElement("script");
     script.src = PLUGGY_SCRIPT_URL;
     script.async = true;
-    script.onload = () => resolve();
+    script.onload = () => {
+      console.log("Pluggy Script carregado com sucesso");
+      resolve();
+    };
     script.onerror = () => reject(new Error("Falha ao carregar o widget Pluggy."));
     document.head.appendChild(script);
   });
