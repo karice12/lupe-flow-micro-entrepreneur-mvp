@@ -1,17 +1,28 @@
 import { createClient, SupabaseClient, RealtimeChannel } from "@supabase/supabase-js";
 
-// Pegando as chaves que você já salvou na Vercel
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
 let _client: SupabaseClient | null = null;
+let _initPromise: Promise<SupabaseClient | null> | null = null;
 
-export function getSupabaseClient(): Promise<SupabaseClient | null> {
-  if (_client) return Promise.resolve(_client);
+async function initClient(): Promise<SupabaseClient | null> {
+  let supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? "").trim().replace(/^["']|["']$/g, "");
+  let supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim().replace(/^["']|["']$/g, "");
 
-  if (!supabaseUrl || !supabaseAnonKey) {
+  if (!supabaseUrl || !supabaseUrl.startsWith("http")) {
+    try {
+      const res = await fetch("/api/config/supabase");
+      if (res.ok) {
+        const cfg = await res.json();
+        supabaseUrl = (cfg.url ?? "").trim();
+        supabaseAnonKey = (cfg.anon_key ?? "").trim();
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!supabaseUrl || !supabaseAnonKey || !supabaseUrl.startsWith("http")) {
     console.error("Configurações do Supabase não encontradas!");
-    return Promise.resolve(null);
+    return null;
   }
 
   _client = createClient(supabaseUrl, supabaseAnonKey, {
@@ -23,7 +34,13 @@ export function getSupabaseClient(): Promise<SupabaseClient | null> {
     },
   });
 
-  return Promise.resolve(_client);
+  return _client;
+}
+
+export function getSupabaseClient(): Promise<SupabaseClient | null> {
+  if (_client) return Promise.resolve(_client);
+  if (!_initPromise) _initPromise = initClient();
+  return _initPromise;
 }
 
 export async function getAccessToken(): Promise<string | null> {
