@@ -110,3 +110,36 @@ class CheckoutSessionResponse(BaseModel):
 
 class PluggyTokenResponse(BaseModel):
     connect_token: str
+
+
+# ─── Pluggy Webhook ───────────────────────────────────────────────────────────
+
+class PluggyWebhookTransaction(BaseModel):
+    id: Optional[str] = None
+    amount: Optional[float] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+
+    model_config = {"extra": "allow"}
+
+
+class PluggyWebhookItem(BaseModel):
+    id: Optional[str] = None
+    clientUserId: Optional[str] = None
+
+    model_config = {"extra": "allow"}
+
+
+class PluggyWebhookData(BaseModel):
+    item: Optional[PluggyWebhookItem] = None
+    transactions: Optional[List[PluggyWebhookTransaction]] = None
+
+    model_config = {"extra": "allow"}
+
+
+class PluggyWebhookPayload(BaseModel):
+    event: Optional[str] = None
+    itemId: Optional[str] = None
+    data: Optional[PluggyWebhookData] = None
+
+    model_config = {"extra": "allow"}

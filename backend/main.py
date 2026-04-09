@@ -8,7 +8,7 @@ from backend.models import (
     WebhookPixRequest, WebhookPixResponse, TransactionsResponse, TransactionItem,
     BankConnection, BankConnectionListResponse, AddBankConnectionRequest,
     CheckoutSessionRequest, CheckoutSessionResponse,
-    PluggyTokenResponse,
+    PluggyTokenResponse, PluggyWebhookPayload,
 )
 from backend.storage import (
     get_balances, save_balances, get_user_status, upsert_goals, save_consent,
@@ -526,3 +526,66 @@ def get_pluggy_token(
     """
     connect_token = generate_connect_token(token_user_id)
     return PluggyTokenResponse(connect_token=connect_token)
+
+
+# ─── Pluggy Webhook (server-to-server — no user JWT) ─────────────────────────
+
+@app.post("/webhook")
+async def pluggy_webhook(payload: PluggyWebhookPayload):
+    """
+    Receives Pluggy webhook events (transactions/created, etc.).
+    Extracts user_id from data.item.clientUserId (set when generating the connect token).
+    Saves each transaction to public.transactions in Supabase.
+    """
+    event = payload.event or ""
+    logger.info(f"Pluggy webhook received: event='{event}' itemId='{payload.itemId}'")
+
+    if event != "transactions/created":
+        logger.info(f"Pluggy webhook ignored: event='{event}' is not 'transactions/created'")
+        return {"received": True, "processed": 0}
+
+    data = payload.data
+    if not data or not data.item:
+        logger.warning("Pluggy webhook: 'data' or 'data.item' missing — ignoring.")
+        return {"received": True, "processed": 0}
+
+    user_id = (data.item.clientUserId or "").strip()
+    if not user_id:
+        logger.warning("Pluggy webhook: 'clientUserId' is empty — cannot identify user.")
+        return {"received": True, "processed": 0}
+
+    transactions = data.transactions or []
+    saved = 0
+
+    for tx in transactions:
+        tx_id     = tx.id or ""
+        amount    = tx.amount
+        desc      = (tx.description or "").strip() or "Transação Pluggy"
+        category  = (tx.category or "outros").strip().lower()
+
+        if amount is None:
+            logger.warning(f"Pluggy webhook: transaction '{tx_id}' has no amount — skipping.")
+            continue
+
+        if tx_id and is_transaction_processed(tx_id):
+            logger.info(f"Pluggy webhook: duplicate transaction '{tx_id}' — skipping (idempotent).")
+            continue
+
+        try:
+            log_transaction(
+                user_id=user_id,
+                amount=abs(amount),
+                category=category,
+                description=desc,
+                external_id=tx_id or None,
+            )
+            saved += 1
+            logger.info(
+                f"Pluggy webhook: saved tx '{tx_id}' user='{user_id}' "
+                f"amount={amount} category='{category}'"
+            )
+        except Exception as e:
+            logger.error(f"Pluggy webhook: failed to save tx '{tx_id}' for user '{user_id}': {e}")
+
+    logger.info(f"Pluggy webhook done: event='{event}' user='{user_id}' saved={saved}/{len(transactions)}")
+    return {"received": True, "processed": saved}
