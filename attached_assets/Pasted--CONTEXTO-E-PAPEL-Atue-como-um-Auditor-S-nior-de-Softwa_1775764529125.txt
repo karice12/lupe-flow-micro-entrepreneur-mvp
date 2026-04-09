@@ -1,0 +1,34 @@
+[CONTEXTO E PAPEL]
+Atue como um Auditor Sênior de Software e Gerente de Produto. Seu objetivo é analisar o código atual deste repositório/workspace ("lupe-flow-micro-entrepreneur-mvp") e me fornecer um relatório exato de "Status Atual" e um "Checklist de Lançamento" para o MVP.
+
+[REGRAS DE CONTENÇÃO - LEIA ATENTAMENTE]
+Para economizar créditos e processamento:
+1. NÃO escreva novos códigos, NÃO crie arquivos e NÃO sugira refatorações não solicitadas.
+2. NÃO faça suposições sobre arquivos que não estão no workspace. Baseie-se APENAS no código que você pode ler.
+3. Seja direto e conciso. Responda estritamente no formato de saída solicitado.
+
+[TAREFAS DE AUDITORIA]
+Analise os diretórios principais (como src, pages, controllers, package.json/requirements.txt) e verifique os seguintes pontos críticos de negócio:
+
+A. INTEGRAÇÃO E DADOS: 
+- Procure por qualquer resquício de "campos de simulação" de valores. O sistema DEVE puxar as informações de valores de forma integrada e direta da conta do cliente. Informe se ainda há código de simulação ativo ou se a integração real já está implementada.
+
+B. COMPLIANCE E PROFISSIONALISMO:
+- Verifique no front-end/telas se existem mensagens claras sobre a LGPD e o aceite dos Termos de Uso da plataforma.
+
+C. SEGURANÇA E HIGIENE DO CÓDIGO:
+- Verifique vazamento de credenciais (hardcoded) e se as rotas financeiras possuem autenticação.
+
+[FORMATO DE SAÍDA EXIGIDO]
+Gere a resposta usando a seguinte estrutura:
+
+### 1. Status Atual do Projeto (Em que pé estamos)
+(Resumo em tópicos curtos do que já está codificado e funcional no workspace atual).
+
+### 2. Análise de Regras Críticas
+- [ ] Remoção de Simulação e Integração Direta: (Status: Concluído / Pendente / Com falhas) - Detalhes curtos.
+- [ ] Mensagem LGPD e Termos de Uso: (Status: Concluído / Pendente / Com falhas) - Detalhes curtos.
+- [ ] Segurança Básica: (Status: OK / Alerta) - Detalhes curtos.
+
+### 3. Checklist de Lançamento (O que falta fazer)
+(Liste de 3 a 5 passos técnicos estritamente necessários para colocar este MVP em produção, focando no que está faltando nos arquivos analisados).
