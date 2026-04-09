@@ -34,12 +34,15 @@ src/
     BoxCard.tsx                     # Card com anel SVG (donut chart) + "Faltam R$ X"
     PixSimulator.tsx                # Simulador de Pix (Premium gated)
     PremiumModal.tsx                # Modal de upgrade R$29,90/mês
+    BankConnectionsCard.tsx         # Gerenciar conexões bancárias (free = upsell; premium = lista)
+    LgpdModal.tsx                   # Modal LGPD com aceite de termos
     LgpdFooter.tsx
 
 backend/
   main.py       # FastAPI routes — /dividir-pix retorna 400 (não 422) + rollback atômico
-  models.py     # PixRequest (description field added), PixResponse, UserStatusResponse...
+  models.py     # PixRequest, PixResponse, BankConnection, BankConnectionListResponse...
   storage.py    # Supabase CRUD — raise HTTP 503 on failure, no in-memory fallback
+  auth.py       # JWT middleware — get_token_user_id + assert_owns_resource
 ```
 
 ## API Endpoints
@@ -53,6 +56,9 @@ backend/
 | POST | `/usuario/{user_id}/consent` | Registra aceite LGPD |
 | POST | `/usuario/{user_id}/premium` | Ativa plano Premium (simula checkout) |
 | DELETE | `/usuario/{user_id}/premium` | Cancela plano Premium |
+| GET  | `/usuario/{user_id}/banks` | Lista conexões bancárias (ativas + inativas + billable_units) |
+| POST | `/usuario/{user_id}/banks` | Adiciona nova conexão bancária (status=active) |
+| DELETE | `/usuario/{user_id}/banks/{id}` | Soft-delete: status=inactive + deactivated_at registrado |
 | GET  | `/saldos` | Saldos atuais por caixa |
 | POST | `/dividir-pix` | Divide Pix (30/50/20 + transbordo) com rollback atômico |
 | GET  | `/transactions` | Histórico de transações (limit param, max 50) |
@@ -60,12 +66,19 @@ backend/
 
 ## Supabase Setup
 
-Run `supabase_setup.sql` in Supabase Dashboard → SQL Editor. Includes:
-- `user_balances` table with `is_premium` column, RLS, Realtime
-- `transactions` table with indexes
-- RLS policies (permissive — isolation enforced in Python layer)
+Run scripts in order in Supabase Dashboard → SQL Editor:
 
-Secrets: `SUPABASE_URL`, `SUPABASE_ANON_KEY`
+1. `supabase_setup.sql` — Tabelas base: `user_balances` + `transactions`, RLS, Realtime
+2. `supabase_rls_hardened.sql` — RLS restritivo: substitui `USING (true)` por `auth.uid()::text = user_id`
+3. `supabase_schema_v2.sql` — Schema v2: tabela `bank_connections` + coluna `plan_cycle` em `user_balances`
+
+Secrets: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+
+## Billing Model
+
+- **Plano Base**: R$ 29,90/mês — inclui 1 banco conectado
+- **Banco adicional**: +R$ 7,99/mês por conexão além da primeira
+- **Pró-rata**: `count_billable_units(user_id)` conta bancos ativos em qualquer momento do mês corrente (mesmo desativados no meio do período), subtraindo 1 do total — retorna somente os extras faturáveis
 
 ## Business Logic — Regra das 3 Caixas + Transbordo
 

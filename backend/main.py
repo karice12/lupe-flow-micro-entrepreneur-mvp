@@ -7,10 +7,12 @@ from dotenv import load_dotenv
 from backend.models import (
     PixRequest, PixResponse, UserGoalsRequest, UserStatusResponse,
     WebhookPixRequest, WebhookPixResponse, TransactionsResponse, TransactionItem,
+    BankConnection, BankConnectionListResponse, AddBankConnectionRequest,
 )
 from backend.storage import (
     get_balances, save_balances, get_user_status, upsert_goals, save_consent,
     is_transaction_processed, log_transaction, get_recent_transactions, set_premium,
+    list_bank_connections, add_bank_connection, deactivate_bank_connection, count_billable_units,
 )
 from backend.auth import get_token_user_id, assert_owns_resource
 
@@ -255,6 +257,83 @@ def webhook_pix(req: WebhookPixRequest, user_id: str = Query(default="usuario_te
         bills=round(balance.bills, 2),
         emergency=round(balance.emergency, 2),
         overflow=allocs["overflow"],
+    )
+
+
+# ─── Bank Connections (all write — JWT required) ──────────────────────────────
+
+@app.get("/usuario/{user_id}/banks", response_model=BankConnectionListResponse)
+def get_banks(
+    user_id: str,
+    token_user_id: str = Depends(get_token_user_id),
+):
+    """
+    List all bank connections for the authenticated user.
+    Returns active + inactive rows and the count of extra billable units.
+    """
+    assert_owns_resource(token_user_id, user_id)
+    rows = list_bank_connections(user_id)
+    connections = [
+        BankConnection(
+            id=str(r["id"]),
+            user_id=r["user_id"],
+            bank_name=r["bank_name"],
+            status=r["status"],
+            provider_id=r.get("provider_id"),
+            activated_at=str(r.get("activated_at", "")),
+            deactivated_at=str(r["deactivated_at"]) if r.get("deactivated_at") else None,
+        )
+        for r in rows
+    ]
+    extra = count_billable_units(user_id)
+    return BankConnectionListResponse(connections=connections, billable_units=extra)
+
+
+@app.post("/usuario/{user_id}/banks", response_model=BankConnection)
+def create_bank(
+    user_id: str,
+    req: AddBankConnectionRequest,
+    token_user_id: str = Depends(get_token_user_id),
+):
+    """
+    Add a new active bank connection for the authenticated user.
+    Returns the created connection row.
+    """
+    assert_owns_resource(token_user_id, user_id)
+    if not req.bank_name.strip():
+        raise HTTPException(status_code=422, detail="O nome do banco não pode estar vazio.")
+    row = add_bank_connection(user_id, req.bank_name.strip(), req.provider_id)
+    return BankConnection(
+        id=str(row["id"]),
+        user_id=row["user_id"],
+        bank_name=row["bank_name"],
+        status=row["status"],
+        provider_id=row.get("provider_id"),
+        activated_at=str(row.get("activated_at", "")),
+        deactivated_at=None,
+    )
+
+
+@app.delete("/usuario/{user_id}/banks/{connection_id}", response_model=BankConnection)
+def remove_bank(
+    user_id: str,
+    connection_id: str,
+    token_user_id: str = Depends(get_token_user_id),
+):
+    """
+    Soft-delete a bank connection: sets status='inactive' and records deactivated_at.
+    Row is preserved for billing cycle calculations.
+    """
+    assert_owns_resource(token_user_id, user_id)
+    row = deactivate_bank_connection(user_id, connection_id)
+    return BankConnection(
+        id=str(row["id"]),
+        user_id=row["user_id"],
+        bank_name=row["bank_name"],
+        status=row["status"],
+        provider_id=row.get("provider_id"),
+        activated_at=str(row.get("activated_at", "")),
+        deactivated_at=str(row["deactivated_at"]) if row.get("deactivated_at") else None,
     )
 
 

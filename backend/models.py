@@ -77,3 +77,23 @@ class TransactionItem(BaseModel):
 
 class TransactionsResponse(BaseModel):
     transactions: List[TransactionItem]
+
+
+class BankConnection(BaseModel):
+    id: str
+    user_id: str
+    bank_name: str
+    status: str
+    provider_id: Optional[str] = None
+    activated_at: str
+    deactivated_at: Optional[str] = None
+
+
+class BankConnectionListResponse(BaseModel):
+    connections: List[BankConnection]
+    billable_units: int
+
+
+class AddBankConnectionRequest(BaseModel):
+    bank_name: str
+    provider_id: Optional[str] = None

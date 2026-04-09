@@ -246,3 +246,150 @@ def get_recent_transactions(user_id: str, limit: int = 10) -> list:
     except Exception as e:
         logger.warning(f"Could not fetch transactions for '{user_id}': {e}")
         return []
+
+
+# ─── Bank Connections ─────────────────────────────────────────────────────────
+
+def list_bank_connections(user_id: str) -> list:
+    """
+    Return all bank_connections rows for the user (active + inactive),
+    ordered newest first.
+    """
+    sb = get_supabase()
+    try:
+        res = (
+            sb.table("bank_connections")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("activated_at", desc=True)
+            .execute()
+        )
+        return res.data or []
+    except Exception as e:
+        logger.error(f"list_bank_connections error for '{user_id}': {e}")
+        raise HTTPException(status_code=503, detail=f"Erro ao listar conexões bancárias: {e}")
+
+
+def add_bank_connection(user_id: str, bank_name: str, provider_id: str | None = None) -> dict:
+    """
+    Insert a new active bank connection for the user.
+    Returns the created row.
+    """
+    sb = get_supabase()
+    row: dict = {
+        "user_id":   user_id,
+        "bank_name": bank_name,
+        "status":    "active",
+    }
+    if provider_id:
+        row["provider_id"] = provider_id
+    try:
+        res = sb.table("bank_connections").insert(row).execute()
+        if not res.data:
+            raise ValueError("Insert returned no data.")
+        logger.info(f"Bank connection added: user='{user_id}' bank='{bank_name}'")
+        return res.data[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"add_bank_connection error for '{user_id}': {e}")
+        raise HTTPException(status_code=503, detail=f"Erro ao adicionar conexão bancária: {e}")
+
+
+def deactivate_bank_connection(user_id: str, connection_id: str) -> dict:
+    """
+    Soft-delete: set status='inactive' and record deactivated_at.
+    The row is preserved for billing calculations of the current cycle.
+    Returns the updated row.
+    """
+    from datetime import datetime, timezone
+    sb = get_supabase()
+    try:
+        # Verify ownership before updating
+        check = (
+            sb.table("bank_connections")
+            .select("id, user_id, status")
+            .eq("id", connection_id)
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        if not check.data:
+            raise HTTPException(status_code=404, detail="Conexão bancária não encontrada ou não pertence ao usuário.")
+        if check.data[0]["status"] == "inactive":
+            raise HTTPException(status_code=409, detail="A conexão já está inativa.")
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        res = (
+            sb.table("bank_connections")
+            .update({"status": "inactive", "deactivated_at": now_iso})
+            .eq("id", connection_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+        if not res.data:
+            raise ValueError("Update returned no data.")
+        logger.info(f"Bank connection deactivated: user='{user_id}' id='{connection_id}'")
+        return res.data[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"deactivate_bank_connection error for '{user_id}': {e}")
+        raise HTTPException(status_code=503, detail=f"Erro ao inativar conexão bancária: {e}")
+
+
+def count_billable_units(user_id: str) -> int:
+    """
+    Count how many distinct banks were active at ANY point in the current
+    calendar month, then subtract 1 (the bank included in the base plan).
+    Returns the number of *extra* billable bank connections (minimum 0).
+
+    Logic:
+      A connection is billable for the month if:
+        activated_at  <= last moment of current month
+        AND (deactivated_at IS NULL OR deactivated_at >= first moment of month)
+    """
+    from datetime import datetime, timezone
+    sb = get_supabase()
+    try:
+        now = datetime.now(timezone.utc)
+        # First and last instant of the current calendar month (UTC)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if now.month == 12:
+            month_end = now.replace(year=now.year + 1, month=1, day=1,
+                                    hour=0, minute=0, second=0, microsecond=0)
+        else:
+            month_end = now.replace(month=now.month + 1, day=1,
+                                    hour=0, minute=0, second=0, microsecond=0)
+
+        month_start_iso = month_start.isoformat()
+        month_end_iso   = month_end.isoformat()
+
+        # Connections activated before month end
+        res = (
+            sb.table("bank_connections")
+            .select("id, deactivated_at")
+            .eq("user_id", user_id)
+            .lte("activated_at", month_end_iso)
+            .execute()
+        )
+        rows = res.data or []
+
+        # Filter: deactivated_at is NULL (still active) OR deactivated_at >= month_start
+        billable = [
+            r for r in rows
+            if r.get("deactivated_at") is None
+            or r["deactivated_at"] >= month_start_iso
+        ]
+        total = len(billable)
+        extra = max(0, total - 1)
+        logger.info(
+            f"count_billable_units: user='{user_id}' total={total} extra={extra} "
+            f"period=[{month_start_iso} → {month_end_iso}]"
+        )
+        return extra
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"count_billable_units error for '{user_id}': {e}")
+        raise HTTPException(status_code=503, detail=f"Erro ao calcular unidades faturáveis: {e}")

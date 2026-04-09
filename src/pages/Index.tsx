@@ -11,6 +11,7 @@ import { LgpdFooter } from "@/components/LgpdFooter";
 import { PremiumModal } from "@/components/PremiumModal";
 import { PixSimulator } from "@/components/PixSimulator";
 import { BoxCard } from "@/components/BoxCard";
+import { BankConnectionsCard } from "@/components/BankConnectionsCard";
 import { useUserStats } from "@/hooks/useUserStats";
 import type { SimDeltas } from "@/components/PixSimulator";
 import type { BoxState } from "@/hooks/useUserStats";
@@ -193,6 +194,13 @@ const Index = () => {
           hasSimulation={simDeltas !== null}
           onSimulateLocal={(deltas) => setSimDeltas(deltas)}
           onClearSimulation={() => setSimDeltas(null)}
+          onRequestPremium={() => setShowPremiumModal(true)}
+        />
+
+        {/* ── Bank Connections ────────────────────────────────────────── */}
+        <BankConnectionsCard
+          userId={userId}
+          isPremium={isPremium}
           onRequestPremium={() => setShowPremiumModal(true)}
         />
 
