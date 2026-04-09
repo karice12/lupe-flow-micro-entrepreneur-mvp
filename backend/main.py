@@ -28,9 +28,18 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Lupe Flow API")
 
+_allowed_origins = [
+    "https://lupe-flow-micro-entrepreneur-mvp.vercel.app",
+    "http://localhost:5000",
+    "http://localhost:3000",
+]
+_replit_domain = os.getenv("REPLIT_DEV_DOMAIN", "")
+if _replit_domain:
+    _allowed_origins.append(f"https://{_replit_domain}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
