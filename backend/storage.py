@@ -417,27 +417,36 @@ def get_monthly_summary(user_id: str, reference_month: str) -> dict | None:
         raise HTTPException(status_code=503, detail=f"Erro ao buscar fechamento mensal: {e}")
 
 
+def _month_date_range(reference_month: str) -> tuple[str, str]:
+    """
+    Fix 3 — retorna (start_iso, end_iso) em UTC com offset explícito (+00:00)
+    para garantir compatibilidade com o filtro de timestamps do Supabase.
+    """
+    from datetime import datetime, timezone
+    year, month = int(reference_month[:4]), int(reference_month[5:7])
+    start = datetime(year, month, 1, 0, 0, 0, tzinfo=timezone.utc)
+    if month == 12:
+        end = datetime(year + 1, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    else:
+        end = datetime(year, month + 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    # Force explicit +00:00 offset so Supabase PostgREST interprets correctly
+    return start.strftime("%Y-%m-%dT%H:%M:%S+00:00"), end.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+
 def get_top_transactions_for_month(user_id: str, reference_month: str, limit: int = 5) -> list:
     """
-    Return the top N transactions by amount for the given calendar month (UTC).
-    reference_month format: 'YYYY-MM'
+    Fix 3 — Top N transações por amount DESC para user_id + mês.
+    Filtra obrigatoriamente por user_id e intervalo de datas UTC explícito.
     """
     sb = get_supabase()
     try:
-        from datetime import datetime, timezone
-        year, month = int(reference_month[:4]), int(reference_month[5:7])
-        start = datetime(year, month, 1, tzinfo=timezone.utc)
-        if month == 12:
-            end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
-        else:
-            end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
-
+        start_iso, end_iso = _month_date_range(reference_month)
         res = (
             sb.table("transactions")
-            .select("*")
+            .select("id, user_id, amount, category, description, created_at")
             .eq("user_id", user_id)
-            .gte("created_at", start.isoformat())
-            .lt("created_at", end.isoformat())
+            .gte("created_at", start_iso)
+            .lt("created_at", end_iso)
             .order("amount", desc=True)
             .limit(limit)
             .execute()
@@ -449,23 +458,21 @@ def get_top_transactions_for_month(user_id: str, reference_month: str, limit: in
 
 
 def get_total_income_for_month(user_id: str, reference_month: str) -> float:
-    """Sum all transaction amounts for the given calendar month."""
+    """
+    Fix 2 — SUM(amount) de todas as transações do user no mês.
+    O schema usa category (salario/contas/reserva), não type='entrada'.
+    Todas as linhas em transactions são entradas; a soma representa o total recebido
+    (ex: PIX de R$1.000 → 3 rows: 300+500+200 = R$1.000).
+    """
     sb = get_supabase()
     try:
-        from datetime import datetime, timezone
-        year, month = int(reference_month[:4]), int(reference_month[5:7])
-        start = datetime(year, month, 1, tzinfo=timezone.utc)
-        if month == 12:
-            end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
-        else:
-            end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
-
+        start_iso, end_iso = _month_date_range(reference_month)
         res = (
             sb.table("transactions")
             .select("amount")
             .eq("user_id", user_id)
-            .gte("created_at", start.isoformat())
-            .lt("created_at", end.isoformat())
+            .gte("created_at", start_iso)
+            .lt("created_at", end_iso)
             .execute()
         )
         return sum(float(r.get("amount", 0)) for r in (res.data or []))

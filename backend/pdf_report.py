@@ -25,6 +25,22 @@ GREEN        = colors.HexColor("#34D399")
 
 W, H = A4  # 595 x 842 pts
 
+# Fix 1 — mapa de meses em PT-BR (strftime("%B") retorna inglês no servidor)
+_MONTHS_PT = {
+    1: "Janeiro", 2: "Fevereiro", 3: "Março",    4: "Abril",
+    5: "Maio",    6: "Junho",     7: "Julho",     8: "Agosto",
+    9: "Setembro",10: "Outubro",  11: "Novembro", 12: "Dezembro",
+}
+
+
+def _month_label_pt(reference_month: str) -> str:
+    """Converte 'YYYY-MM' em 'Março de 2025' (PT-BR)."""
+    try:
+        dt = datetime.strptime(reference_month, "%Y-%m")
+        return f"{_MONTHS_PT[dt.month]} de {dt.year}"
+    except Exception:
+        return reference_month
+
 
 def _brl(value: float) -> str:
     return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -110,12 +126,8 @@ def generate_monthly_pdf(
     _text(c, "Lupe Flow", 24*mm + logo_size + 6, H - 35, size=18, bold=True, color=ORANGE)
     _text(c, "Relatório de Fechamento Mensal", 24*mm + logo_size + 6, H - 51, size=9, color=GRAY_TEXT)
 
-    # Mês de referência (canto direito)
-    try:
-        dt = datetime.strptime(reference_month, "%Y-%m")
-        month_label = dt.strftime("%B de %Y").capitalize()
-    except Exception:
-        month_label = reference_month
+    # Mês de referência (canto direito) — Fix 1: PT-BR via _month_label_pt
+    month_label = _month_label_pt(reference_month)
     _text(c, month_label, W - 24*mm, H - 38, size=13, bold=True, color=WHITE, align="right")
     _text(c, f"Gerado em {datetime.now().strftime('%d/%m/%Y')}", W - 24*mm, H - 54,
           size=8, color=GRAY_TEXT, align="right")
