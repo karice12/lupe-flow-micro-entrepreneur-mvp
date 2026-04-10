@@ -3,17 +3,21 @@ import logging
 from fastapi import FastAPI, HTTPException, Query, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from fastapi.responses import StreamingResponse
 from backend.models import (
     PixRequest, PixResponse, UserGoalsRequest, UserStatusResponse,
     WebhookPixRequest, WebhookPixResponse, TransactionsResponse, TransactionItem,
     BankConnection, BankConnectionListResponse, AddBankConnectionRequest,
     CheckoutSessionRequest, CheckoutSessionResponse,
     PluggyTokenResponse, PluggyWebhookPayload,
+    MonthlyCloseResponse,
 )
 from backend.storage import (
     get_balances, save_balances, get_user_status, upsert_goals, save_consent,
     is_transaction_processed, log_transaction, get_recent_transactions, set_premium,
     list_bank_connections, add_bank_connection, deactivate_bank_connection, count_billable_units,
+    save_monthly_summary, get_monthly_summary,
+    get_top_transactions_for_month, get_total_income_for_month,
 )
 from backend.auth import get_token_user_id, assert_owns_resource
 from backend.stripe_billing import (
@@ -598,3 +602,137 @@ async def pluggy_webhook(payload: PluggyWebhookPayload):
 
     logger.info(f"Pluggy webhook done: event='{event}' user='{user_id}' saved={saved}/{len(transactions)}")
     return {"received": True, "processed": saved}
+
+
+# ─── Monthly Close (write — JWT required, premium only) ───────────────────────
+
+@app.post("/usuario/{user_id}/fechamento", response_model=MonthlyCloseResponse)
+def fechar_mes(
+    user_id: str,
+    token_user_id: str = Depends(get_token_user_id),
+    month: str = Query(
+        default=None,
+        description="Mês de referência no formato YYYY-MM. Padrão: mês anterior.",
+    ),
+):
+    """
+    Executa o fechamento mensal:
+    1. Captura snapshot dos saldos atuais.
+    2. Salva em monthly_summaries.
+    3. Zera Salário e Contas. Reserva é preservada.
+    Premium exclusivo.
+    """
+    assert_owns_resource(token_user_id, user_id)
+
+    status = get_user_status(user_id)
+    if not status.get("is_premium"):
+        raise HTTPException(status_code=403, detail="Recurso exclusivo para assinantes Premium.")
+
+    from datetime import datetime, timezone, timedelta
+    if not month:
+        today = datetime.now(timezone.utc)
+        first_of_month = today.replace(day=1)
+        last_month = first_of_month - timedelta(days=1)
+        month = last_month.strftime("%Y-%m")
+
+    balance = get_balances(user_id, {})
+    total_income = get_total_income_for_month(user_id, month)
+
+    row = save_monthly_summary(
+        user_id=user_id,
+        reference_month=month,
+        salary_snapshot=balance.salary,
+        bills_snapshot=balance.bills,
+        emergency_snapshot=balance.emergency,
+        salary_goal=balance.salary_goal,
+        bills_goal=balance.bills_goal,
+        emergency_goal=balance.emergency_goal,
+        total_income=total_income,
+    )
+
+    return MonthlyCloseResponse(
+        message=f"Fechamento de {month} realizado com sucesso.",
+        reference_month=month,
+        salary_snapshot=float(row.get("salary_snapshot", 0)),
+        bills_snapshot=float(row.get("bills_snapshot", 0)),
+        emergency_snapshot=float(row.get("emergency_snapshot", 0)),
+        total_income=float(row.get("total_income", 0)),
+    )
+
+
+# ─── Monthly PDF Report (GET — JWT required, premium only) ────────────────────
+
+@app.get("/usuario/{user_id}/relatorio/mensal")
+def relatorio_mensal_pdf(
+    user_id: str,
+    token_user_id: str = Depends(get_token_user_id),
+    month: str = Query(
+        default=None,
+        description="Mês de referência no formato YYYY-MM. Padrão: mês anterior.",
+    ),
+):
+    """
+    Gera e retorna o relatório PDF do mês informado.
+    - Se houver um fechamento salvo (monthly_summaries), usa esses dados.
+    - Caso contrário, usa os saldos atuais (útil para mês corrente).
+    Premium exclusivo.
+    """
+    assert_owns_resource(token_user_id, user_id)
+
+    status = get_user_status(user_id)
+    if not status.get("is_premium"):
+        raise HTTPException(status_code=403, detail="Relatório PDF exclusivo para assinantes Premium.")
+
+    from datetime import datetime, timezone, timedelta
+    from backend.pdf_report import generate_monthly_pdf
+
+    if not month:
+        today = datetime.now(timezone.utc)
+        first_of_month = today.replace(day=1)
+        last_month = first_of_month - timedelta(days=1)
+        month = last_month.strftime("%Y-%m")
+
+    summary = get_monthly_summary(user_id, month)
+    top_txs  = get_top_transactions_for_month(user_id, month, limit=5)
+
+    if summary:
+        salary_s    = float(summary.get("salary_snapshot", 0))
+        bills_s     = float(summary.get("bills_snapshot", 0))
+        emergency_s = float(summary.get("emergency_snapshot", 0))
+        salary_g    = float(summary.get("salary_goal", 0))
+        bills_g     = float(summary.get("bills_goal", 0))
+        emergency_g = float(summary.get("emergency_goal", 0))
+        total_in    = float(summary.get("total_income", 0))
+    else:
+        balance     = get_balances(user_id, {})
+        salary_s    = balance.salary
+        bills_s     = balance.bills
+        emergency_s = balance.emergency
+        salary_g    = balance.salary_goal
+        bills_g     = balance.bills_goal
+        emergency_g = balance.emergency_goal
+        total_in    = get_total_income_for_month(user_id, month)
+
+    try:
+        pdf_bytes = generate_monthly_pdf(
+            user_id=user_id,
+            reference_month=month,
+            salary_snapshot=salary_s,
+            bills_snapshot=bills_s,
+            emergency_snapshot=emergency_s,
+            salary_goal=salary_g,
+            bills_goal=bills_g,
+            emergency_goal=emergency_g,
+            total_income=total_in,
+            top_transactions=top_txs,
+        )
+    except Exception as e:
+        logger.error(f"PDF generation error for user '{user_id}': {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar PDF: {e}")
+
+    filename = f"lupeflow-relatorio-{month}.pdf"
+    return StreamingResponse(
+        iter([pdf_bytes]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

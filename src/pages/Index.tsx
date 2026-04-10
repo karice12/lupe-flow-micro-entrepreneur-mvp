@@ -5,7 +5,10 @@ import { Button } from "@/components/ui/button";
 import {
   Wallet, ShieldCheck, Receipt,
   ArrowDownLeft, Zap, LogOut, RefreshCw, Radio, Star, ChevronRight,
+  FileDown, Loader2,
 } from "lucide-react";
+import { getAccessToken } from "@/lib/supabase";
+import { toast } from "sonner";
 import { useGoals } from "@/contexts/GoalsContext";
 import { LgpdFooter } from "@/components/LgpdFooter";
 import { PremiumModal } from "@/components/PremiumModal";
@@ -46,8 +49,47 @@ const Index = () => {
   } = useUserStats();
 
   const [showPremiumModal, setShowPremiumModal] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
   const totalBalance = boxes.reduce((s, b) => s + b.accumulated, 0);
+
+  const prevMonthLabel = (() => {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - 1);
+    return d.toLocaleString("pt-BR", { month: "long", year: "numeric" });
+  })();
+
+  const handleDownloadRelatorio = async () => {
+    if (!isPremium) { setShowPremiumModal(true); return; }
+    setIsDownloadingPdf(true);
+    try {
+      const token = await getAccessToken();
+      if (!token) throw new Error("Sessão expirada.");
+      const res = await fetch(`/api/usuario/${encodeURIComponent(userId)}/relatorio/mensal`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Erro ao gerar relatório.");
+      }
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url;
+      a.download = `lupeflow-relatorio-${new Date().toISOString().slice(0, 7)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Relatório baixado com sucesso!");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Erro ao baixar relatório.";
+      toast.error(msg);
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
 
   // ── Auth guard ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -174,6 +216,33 @@ const Index = () => {
           isPremium={isPremium}
           onRequestPremium={() => setShowPremiumModal(true)}
         />
+
+        {/* ── Relatório PDF ───────────────────────────────────────────── */}
+        <button
+          onClick={handleDownloadRelatorio}
+          disabled={isDownloadingPdf}
+          className="w-full flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 hover:bg-primary/10 hover:border-primary/40 transition-colors px-4 py-3 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="h-9 w-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
+              {isDownloadingPdf
+                ? <Loader2 className="h-4 w-4 text-primary animate-spin" />
+                : <FileDown className="h-4 w-4 text-primary" />
+              }
+            </div>
+            <div className="text-left min-w-0">
+              <p className="text-sm font-semibold text-foreground">
+                {isDownloadingPdf ? "Gerando PDF..." : `Baixar Relatório — ${prevMonthLabel}`}
+              </p>
+              <p className="text-xs text-muted-foreground truncate">
+                {isPremium ? "Resumo mensal com suas 3 caixas e transações" : "Exclusivo Premium — clique para assinar"}
+              </p>
+            </div>
+          </div>
+          {!isDownloadingPdf && (
+            <ChevronRight className="h-4 w-4 text-primary shrink-0" />
+          )}
+        </button>
 
         {/* ── 3 Boxes ─────────────────────────────────────────────────── */}
         <div className="space-y-3">

@@ -346,6 +346,134 @@ def deactivate_bank_connection(user_id: str, connection_id: str) -> dict:
         raise HTTPException(status_code=503, detail=f"Erro ao inativar conexão bancária: {e}")
 
 
+# ─── Monthly Summaries ────────────────────────────────────────────────────────
+
+def save_monthly_summary(
+    user_id: str,
+    reference_month: str,
+    salary_snapshot: float,
+    bills_snapshot: float,
+    emergency_snapshot: float,
+    salary_goal: float,
+    bills_goal: float,
+    emergency_goal: float,
+    total_income: float,
+) -> dict:
+    """
+    Upsert a monthly summary row and then zero out salary + bills balances.
+    Emergency balance is preserved.
+    Returns the saved summary row.
+    """
+    sb = get_supabase()
+    try:
+        res = sb.table("monthly_summaries").upsert({
+            "user_id":            user_id,
+            "reference_month":    reference_month,
+            "salary_snapshot":    round(salary_snapshot, 2),
+            "bills_snapshot":     round(bills_snapshot, 2),
+            "emergency_snapshot": round(emergency_snapshot, 2),
+            "salary_goal":        round(salary_goal, 2),
+            "bills_goal":         round(bills_goal, 2),
+            "emergency_goal":     round(emergency_goal, 2),
+            "total_income":       round(total_income, 2),
+        }, on_conflict="user_id,reference_month").execute()
+
+        if not res.data:
+            raise ValueError("Upsert monthly_summaries returned no data.")
+
+        # Zero out salary + bills; keep emergency intact
+        sb.table("user_balances").update({
+            "salary": 0.0,
+            "bills":  0.0,
+        }).eq("user_id", user_id).execute()
+
+        logger.info(
+            f"Monthly close done: user='{user_id}' month='{reference_month}' "
+            f"salary={salary_snapshot} bills={bills_snapshot} emergency={emergency_snapshot}"
+        )
+        return res.data[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"save_monthly_summary error for '{user_id}': {e}")
+        raise HTTPException(status_code=503, detail=f"Erro ao salvar fechamento mensal: {e}")
+
+
+def get_monthly_summary(user_id: str, reference_month: str) -> dict | None:
+    """Return the monthly_summaries row for the given month, or None."""
+    sb = get_supabase()
+    try:
+        res = (
+            sb.table("monthly_summaries")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("reference_month", reference_month)
+            .limit(1)
+            .execute()
+        )
+        return res.data[0] if res.data else None
+    except Exception as e:
+        logger.error(f"get_monthly_summary error for '{user_id}': {e}")
+        raise HTTPException(status_code=503, detail=f"Erro ao buscar fechamento mensal: {e}")
+
+
+def get_top_transactions_for_month(user_id: str, reference_month: str, limit: int = 5) -> list:
+    """
+    Return the top N transactions by amount for the given calendar month (UTC).
+    reference_month format: 'YYYY-MM'
+    """
+    sb = get_supabase()
+    try:
+        from datetime import datetime, timezone
+        year, month = int(reference_month[:4]), int(reference_month[5:7])
+        start = datetime(year, month, 1, tzinfo=timezone.utc)
+        if month == 12:
+            end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+        else:
+            end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+
+        res = (
+            sb.table("transactions")
+            .select("*")
+            .eq("user_id", user_id)
+            .gte("created_at", start.isoformat())
+            .lt("created_at", end.isoformat())
+            .order("amount", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return res.data or []
+    except Exception as e:
+        logger.warning(f"get_top_transactions_for_month error for '{user_id}': {e}")
+        return []
+
+
+def get_total_income_for_month(user_id: str, reference_month: str) -> float:
+    """Sum all transaction amounts for the given calendar month."""
+    sb = get_supabase()
+    try:
+        from datetime import datetime, timezone
+        year, month = int(reference_month[:4]), int(reference_month[5:7])
+        start = datetime(year, month, 1, tzinfo=timezone.utc)
+        if month == 12:
+            end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+        else:
+            end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+
+        res = (
+            sb.table("transactions")
+            .select("amount")
+            .eq("user_id", user_id)
+            .gte("created_at", start.isoformat())
+            .lt("created_at", end.isoformat())
+            .execute()
+        )
+        return sum(float(r.get("amount", 0)) for r in (res.data or []))
+    except Exception as e:
+        logger.warning(f"get_total_income_for_month error for '{user_id}': {e}")
+        return 0.0
+
+
 def count_billable_units(user_id: str) -> int:
     """
     Count how many distinct banks were active at ANY point in the current

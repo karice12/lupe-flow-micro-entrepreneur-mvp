@@ -143,3 +143,28 @@ class PluggyWebhookPayload(BaseModel):
     data: Optional[PluggyWebhookData] = None
 
     model_config = {"extra": "allow"}
+
+
+# ─── Monthly Summary ──────────────────────────────────────────────────────────
+
+class MonthlySummary(BaseModel):
+    id: str
+    user_id: str
+    reference_month: str
+    salary_snapshot: float
+    bills_snapshot: float
+    emergency_snapshot: float
+    salary_goal: float
+    bills_goal: float
+    emergency_goal: float
+    total_income: float
+    created_at: str
+
+
+class MonthlyCloseResponse(BaseModel):
+    message: str
+    reference_month: str
+    salary_snapshot: float
+    bills_snapshot: float
+    emergency_snapshot: float
+    total_income: float
