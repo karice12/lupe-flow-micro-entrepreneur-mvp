@@ -1,9 +1,13 @@
 import os
 import logging
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, HTTPException, Query, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from fastapi.responses import StreamingResponse
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from backend.models import (
     PixRequest, PixResponse, UserGoalsRequest, UserStatusResponse,
     WebhookPixRequest, WebhookPixResponse, TransactionsResponse, TransactionItem,
@@ -18,6 +22,7 @@ from backend.storage import (
     list_bank_connections, add_bank_connection, deactivate_bank_connection, count_billable_units,
     save_monthly_summary, get_monthly_summary,
     get_top_transactions_for_month, get_total_income_for_month,
+    get_all_premium_users,
 )
 from backend.auth import get_token_user_id, assert_owns_resource
 from backend.stripe_billing import (
@@ -30,7 +35,69 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Lupe Flow API")
+
+# ─── Scheduler: fechamento automático no dia 01 de cada mês ──────────────────
+
+async def _run_monthly_close_all_users():
+    """
+    Job executado às 00:05 do dia 01 de cada mês (UTC).
+    Fecha o mês anterior para todos os usuários premium.
+    """
+    now = datetime.now(timezone.utc)
+    first_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    last_month_end = first_of_month - timedelta(seconds=1)
+    reference_month = last_month_end.strftime("%Y-%m")
+
+    logger.info(f"[Scheduler] Iniciando fechamento automático: mês={reference_month}")
+
+    try:
+        user_ids = get_all_premium_users()
+    except Exception as e:
+        logger.error(f"[Scheduler] Falha ao buscar usuários premium: {e}")
+        return
+
+    logger.info(f"[Scheduler] Usuários premium encontrados: {len(user_ids)}")
+
+    for uid in user_ids:
+        try:
+            balance    = get_balances(uid, {})
+            total_in   = get_total_income_for_month(uid, reference_month)
+            save_monthly_summary(
+                user_id=uid,
+                reference_month=reference_month,
+                salary_snapshot=balance.salary,
+                bills_snapshot=balance.bills,
+                emergency_snapshot=balance.emergency,
+                salary_goal=balance.salary_goal,
+                bills_goal=balance.bills_goal,
+                emergency_goal=balance.emergency_goal,
+                total_income=total_in,
+            )
+            logger.info(f"[Scheduler] Fechamento OK: user='{uid}' mês='{reference_month}'")
+        except Exception as e:
+            logger.error(f"[Scheduler] Erro ao fechar mês para user='{uid}': {e}")
+
+    logger.info(f"[Scheduler] Fechamento automático concluído: {len(user_ids)} usuário(s).")
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    scheduler = AsyncIOScheduler(timezone="UTC")
+    scheduler.add_job(
+        _run_monthly_close_all_users,
+        CronTrigger(day=1, hour=0, minute=5, timezone="UTC"),
+        id="monthly_close",
+        name="Fechamento Mensal Automático",
+        replace_existing=True,
+    )
+    scheduler.start()
+    logger.info("[Scheduler] APScheduler iniciado — fechamento automático no dia 01/mês às 00:05 UTC.")
+    yield
+    scheduler.shutdown(wait=False)
+    logger.info("[Scheduler] APScheduler encerrado.")
+
+
+app = FastAPI(title="Lupe Flow API", lifespan=lifespan)
 
 _allowed_origins = [
     "https://lupe-flow-micro-entrepreneur-mvp.vercel.app",
@@ -628,7 +695,6 @@ def fechar_mes(
     if not status.get("is_premium"):
         raise HTTPException(status_code=403, detail="Recurso exclusivo para assinantes Premium.")
 
-    from datetime import datetime, timezone, timedelta
     if not month:
         today = datetime.now(timezone.utc)
         first_of_month = today.replace(day=1)
@@ -683,7 +749,6 @@ def relatorio_mensal_pdf(
     if not status.get("is_premium"):
         raise HTTPException(status_code=403, detail="Relatório PDF exclusivo para assinantes Premium.")
 
-    from datetime import datetime, timezone, timedelta
     from backend.pdf_report import generate_monthly_pdf
 
     if not month:

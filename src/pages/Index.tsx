@@ -217,33 +217,6 @@ const Index = () => {
           onRequestPremium={() => setShowPremiumModal(true)}
         />
 
-        {/* ── Relatório PDF ───────────────────────────────────────────── */}
-        <button
-          onClick={handleDownloadRelatorio}
-          disabled={isDownloadingPdf}
-          className="w-full flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 hover:bg-primary/10 hover:border-primary/40 transition-colors px-4 py-3 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="h-9 w-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
-              {isDownloadingPdf
-                ? <Loader2 className="h-4 w-4 text-primary animate-spin" />
-                : <FileDown className="h-4 w-4 text-primary" />
-              }
-            </div>
-            <div className="text-left min-w-0">
-              <p className="text-sm font-semibold text-foreground">
-                {isDownloadingPdf ? "Gerando PDF..." : `Baixar Relatório — ${prevMonthLabel}`}
-              </p>
-              <p className="text-xs text-muted-foreground truncate">
-                {isPremium ? "Resumo mensal com suas 3 caixas e transações" : "Exclusivo Premium — clique para assinar"}
-              </p>
-            </div>
-          </div>
-          {!isDownloadingPdf && (
-            <ChevronRight className="h-4 w-4 text-primary shrink-0" />
-          )}
-        </button>
-
         {/* ── 3 Boxes ─────────────────────────────────────────────────── */}
         <div className="space-y-3">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -325,6 +298,35 @@ const Index = () => {
             </div>
           )}
         </div>
+
+        {/* ── Baixar Relatório PDF ─────────────────────────────────────── */}
+        <button
+          onClick={handleDownloadRelatorio}
+          disabled={isDownloadingPdf}
+          className="w-full flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 hover:bg-primary/10 hover:border-primary/40 transition-colors px-4 py-3 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="h-9 w-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
+              {isDownloadingPdf
+                ? <Loader2 className="h-4 w-4 text-primary animate-spin" />
+                : <FileDown className="h-4 w-4 text-primary" />
+              }
+            </div>
+            <div className="text-left min-w-0">
+              <p className="text-sm font-semibold text-foreground">
+                {isDownloadingPdf ? "Gerando PDF..." : `Baixar Relatório — ${prevMonthLabel}`}
+              </p>
+              <p className="text-xs text-muted-foreground truncate">
+                {isPremium
+                  ? "Resumo mensal com suas 3 caixas e transações"
+                  : "Exclusivo Premium — clique para assinar"}
+              </p>
+            </div>
+          </div>
+          {!isDownloadingPdf && (
+            <ChevronRight className="h-4 w-4 text-primary shrink-0" />
+          )}
+        </button>
 
       </div>
 

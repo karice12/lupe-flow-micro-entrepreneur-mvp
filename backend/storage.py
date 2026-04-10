@@ -474,6 +474,22 @@ def get_total_income_for_month(user_id: str, reference_month: str) -> float:
         return 0.0
 
 
+def get_all_premium_users() -> list[str]:
+    """Return list of user_ids where is_premium = True."""
+    sb = get_supabase()
+    try:
+        res = (
+            sb.table("user_balances")
+            .select("user_id")
+            .eq("is_premium", True)
+            .execute()
+        )
+        return [r["user_id"] for r in (res.data or [])]
+    except Exception as e:
+        logger.error(f"get_all_premium_users error: {e}")
+        return []
+
+
 def count_billable_units(user_id: str) -> int:
     """
     Count how many distinct banks were active at ANY point in the current

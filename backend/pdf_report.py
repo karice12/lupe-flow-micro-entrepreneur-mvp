@@ -78,9 +78,37 @@ def generate_monthly_pdf(
     c.setFillColor(ORANGE)
     c.rect(0, H - header_h, W, 2, fill=1, stroke=0)
 
-    # Logo / título
-    _text(c, "⚡ Lupe Flow", 24*mm, H - 38, size=20, bold=True, color=ORANGE)
-    _text(c, "Relatório de Fechamento Mensal", 24*mm, H - 54, size=10, color=GRAY_TEXT)
+    # ── Logo desenhado vetorialmente ───────────────────────────────────────
+    logo_x, logo_y = 24*mm, H - 50
+    logo_size = 28
+
+    # Fundo laranja arredondado
+    c.setFillColor(ORANGE)
+    c.roundRect(logo_x, logo_y, logo_size, logo_size, 6, fill=1, stroke=0)
+
+    # Raio do ícone (lightning bolt) em branco, centralizado no quadrado
+    c.setFillColor(WHITE)
+    cx_l = logo_x + logo_size / 2
+    cy_l = logo_y + logo_size / 2
+    # Polígono em forma de raio (bolt)
+    bolt = [
+        (cx_l + 3,   cy_l + 11),   # topo direito
+        (cx_l - 1,   cy_l + 2),    # meio esquerdo cima
+        (cx_l + 2,   cy_l + 2),    # ponto central superior
+        (cx_l - 3,   cy_l - 11),   # fundo esquerdo
+        (cx_l + 1,   cy_l - 2),    # meio direito baixo
+        (cx_l - 2,   cy_l - 2),    # ponto central inferior
+    ]
+    path = c.beginPath()
+    path.moveTo(*bolt[0])
+    for pt in bolt[1:]:
+        path.lineTo(*pt)
+    path.close()
+    c.drawPath(path, fill=1, stroke=0)
+
+    # Título ao lado do logo
+    _text(c, "Lupe Flow", 24*mm + logo_size + 6, H - 35, size=18, bold=True, color=ORANGE)
+    _text(c, "Relatório de Fechamento Mensal", 24*mm + logo_size + 6, H - 51, size=9, color=GRAY_TEXT)
 
     # Mês de referência (canto direito)
     try:
