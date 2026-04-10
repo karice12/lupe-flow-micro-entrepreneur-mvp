@@ -213,6 +213,7 @@ def generate_monthly_pdf(
     emergency_goal: float,
     total_income: float,
     top_transactions: list[dict],
+    total_balance: float = 0.0,
 ) -> bytes:
     """Gera o PDF de relatório mensal e retorna os bytes."""
 
@@ -236,6 +237,12 @@ def generate_monthly_pdf(
         # recalcula total_income com valores reais se ainda for 0
         if total_income == 0:
             total_income = salary_snapshot + bills_snapshot + emergency_snapshot
+
+    # ── total_balance: sempre busca soma real das caixas do banco ──
+    allocated_fresh = _fetch_allocated_balances(user_id)
+    total_balance = allocated_fresh["salary"] + allocated_fresh["bills"] + allocated_fresh["emergency"]
+    if total_balance == 0:
+        total_balance = salary_snapshot + bills_snapshot + emergency_snapshot
 
     # ── top_transactions: sempre força re-fetch do banco ──
     fetched_txs = _fetch_top_transactions(user_id, reference_month)
@@ -297,13 +304,28 @@ def generate_monthly_pdf(
 
     y = H - header_h - 18*mm
 
-    # ── Resumo Total ───────────────────────────────────────────────────────
-    _text(c, "TOTAL DE ENTRADAS NO MÊS", 24*mm, y, size=8, color=GRAY_TEXT, bold=True)
-    y -= 8*mm
-    _rect(c, 24*mm, y - 6*mm, W - 48*mm, 14*mm, ORANGE, radius=6)
-    _text(c, _brl(total_income), W / 2, y + 1.5*mm, size=18, bold=True,
-          color=WHITE, align="center")
-    y -= 20*mm
+    # ── Resumo: dois cards lado a lado ─────────────────────────────────────
+    half_w = (W - 48*mm - 6*mm) / 2
+    card_h_summary = 20*mm
+
+    # Card esquerdo — Entradas do Mês
+    _rect(c, 24*mm, y - card_h_summary, half_w, card_h_summary, GRAY_CARD, radius=6)
+    c.setFillColor(ORANGE)
+    c.roundRect(24*mm, y - 3, half_w, 3, 2, fill=1, stroke=0)
+    _text(c, "ENTRADAS DO MÊS", 24*mm + 4*mm, y - 10, size=7, color=GRAY_TEXT, bold=True)
+    _text(c, _brl(total_income), 24*mm + half_w / 2, y - card_h_summary + 6*mm,
+          size=14, bold=True, color=ORANGE, align="center")
+
+    # Card direito — Saldo Total Acumulado
+    right_x = 24*mm + half_w + 6*mm
+    _rect(c, right_x, y - card_h_summary, half_w, card_h_summary, GRAY_CARD, radius=6)
+    c.setFillColor(GREEN)
+    c.roundRect(right_x, y - 3, half_w, 3, 2, fill=1, stroke=0)
+    _text(c, "SALDO TOTAL ACUMULADO", right_x + 4*mm, y - 10, size=7, color=GRAY_TEXT, bold=True)
+    _text(c, _brl(total_balance), right_x + half_w / 2, y - card_h_summary + 6*mm,
+          size=14, bold=True, color=GREEN, align="center")
+
+    y -= card_h_summary + 10*mm
 
     # ── As 3 Caixas ────────────────────────────────────────────────────────
     _text(c, "DISTRIBUIÇÃO DAS CAIXAS", 24*mm, y, size=8, color=GRAY_TEXT, bold=True)
