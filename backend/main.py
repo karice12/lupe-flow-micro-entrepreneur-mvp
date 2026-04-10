@@ -107,6 +107,11 @@ _allowed_origins = [
 _replit_domain = os.getenv("REPLIT_DEV_DOMAIN", "")
 if _replit_domain:
     _allowed_origins.append(f"https://{_replit_domain}")
+_frontend_url = os.getenv("FRONTEND_URL", "")
+if _frontend_url:
+    origin = _frontend_url.rstrip("/")
+    if origin not in _allowed_origins:
+        _allowed_origins.append(origin)
 
 app.add_middleware(
     CORSMiddleware,

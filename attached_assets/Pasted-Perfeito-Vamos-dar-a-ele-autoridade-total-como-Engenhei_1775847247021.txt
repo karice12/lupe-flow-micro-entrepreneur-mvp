@@ -1,0 +1,29 @@
+Perfeito. Vamos dar a ele autoridade total como Engenheiro Sênior. Esse prompt é desenhado para que ele assuma a responsabilidade técnica, analise a estrutura e aplique a melhor solução de arquitetura para o Vercel sem precisar de instruções passo a passo.
+
+Copie e cole este comando no chat do Replit:
+
+🧠 Senior Engineer Mode (Copie e Cole)
+Aja como Engenheiro de Software Sênior e Arquiteto Backend. Você é o coração deste projeto e sua missão é colocar o Lupe Flow em produção no Vercel agora.
+
+Contexto do Problema:
+O deploy no Vercel está falhando com o erro: "Could not find a top-level 'app', 'application', or 'handler' in 'api/index.py'". Além disso, o frontend reporta falha na conexão com o Supabase e o backend retorna 404 Not Found ao tentar iniciar pagamentos.
+
+Sua Missão Técnica:
+
+Arquitetura de Exportação: Refatore api/index.py e backend/main.py para garantir que o objeto FastAPI seja exportado corretamente para o ambiente Serverless da Vercel. Decida a melhor forma de manipular o sys.path para que o módulo backend seja localizado sem erros de importação.
+
+Roteamento e Webhooks: Audite o vercel.json e garanta que os rewrites estejam mapeando corretamente as rotas de API e os Webhooks do Stripe/Pluggy para o handler correto.
+
+Resiliência da Autenticação: Verifique src/lib/supabase.ts e garanta que o cliente do Supabase esteja robusto, tratando corretamente as variáveis de ambiente VITE_ e não disparando erros falsos de "serviço indisponível".
+
+Integridade do Pagamento: Resolva a falha no endpoint de pagamento, garantindo que a comunicação entre o frontend e a rota de checkout do Stripe no backend esteja íntegra.
+
+Regras de Execução:
+
+Decisão Autônoma: Não peça permissão para alterar arquivos. Você tem autoridade total sobre o código.
+
+Eficiência de Créditos: Não gere explicações longas ou introduções. Trabalhe em silêncio.
+
+Foco em Produção: O objetivo final é o "Check-mark Verde" no Vercel e o funcionamento do sistema Premium.
+
+Responda apenas com um resumo técnico das alterações após concluí-las.
