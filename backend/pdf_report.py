@@ -101,6 +101,54 @@ def _fetch_top_transactions_any(user_id: str) -> list[dict]:
             sb.table("transactions")
             .select("id,user_id,amount,category,description,created_at")
             .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(5)
+            .execute()
+        )
+        return res.data or []
+    except Exception:
+        return []
+
+
+def _fetch_current_month_income(user_id: str) -> float:
+    """Soma de entradas do mês calendário atual (fallback quando o mês requisitado está vazio)."""
+    try:
+        sb = get_supabase()
+        now = datetime.utcnow()
+        start = f"{now.year:04d}-{now.month:02d}-01T00:00:00+00:00"
+        if now.month == 12:
+            end = f"{now.year + 1:04d}-01-01T00:00:00+00:00"
+        else:
+            end = f"{now.year:04d}-{now.month + 1:02d}-01T00:00:00+00:00"
+        res = (
+            sb.table("transactions")
+            .select("amount")
+            .eq("user_id", user_id)
+            .gte("created_at", start)
+            .lt("created_at", end)
+            .execute()
+        )
+        return sum(float(r.get("amount", 0)) for r in (res.data or []))
+    except Exception:
+        return 0.0
+
+
+def _fetch_current_month_top_transactions(user_id: str) -> list[dict]:
+    """Top 5 transações do mês calendário atual (fallback quando o mês requisitado está vazio)."""
+    try:
+        sb = get_supabase()
+        now = datetime.utcnow()
+        start = f"{now.year:04d}-{now.month:02d}-01T00:00:00+00:00"
+        if now.month == 12:
+            end = f"{now.year + 1:04d}-01-01T00:00:00+00:00"
+        else:
+            end = f"{now.year:04d}-{now.month + 1:02d}-01T00:00:00+00:00"
+        res = (
+            sb.table("transactions")
+            .select("id,user_id,amount,category,description,created_at")
+            .eq("user_id", user_id)
+            .gte("created_at", start)
+            .lt("created_at", end)
             .order("amount", desc=True)
             .limit(5)
             .execute()
@@ -108,6 +156,32 @@ def _fetch_top_transactions_any(user_id: str) -> list[dict]:
         return res.data or []
     except Exception:
         return []
+
+
+def _fetch_allocated_balances(user_id: str) -> dict:
+    """
+    Lê salary_allocated, bills_allocated, emergency_allocated da tabela user_balances.
+    Faz fallback para salary, bills, emergency se as colunas alocadas não existirem.
+    """
+    try:
+        sb = get_supabase()
+        res = (
+            sb.table("user_balances")
+            .select("salary,bills,emergency,salary_allocated,bills_allocated,emergency_allocated")
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        if not res.data:
+            return {"salary": 0.0, "bills": 0.0, "emergency": 0.0}
+        d = res.data[0]
+        return {
+            "salary":    float(d.get("salary_allocated") or d.get("salary") or 0.0),
+            "bills":     float(d.get("bills_allocated")   or d.get("bills")   or 0.0),
+            "emergency": float(d.get("emergency_allocated") or d.get("emergency") or 0.0),
+        }
+    except Exception:
+        return {"salary": 0.0, "bills": 0.0, "emergency": 0.0}
 
 
 def _rect(c: pdf_canvas.Canvas, x, y, w, h, fill_color, radius=4):
@@ -142,19 +216,35 @@ def generate_monthly_pdf(
 ) -> bytes:
     """Gera o PDF de relatório mensal e retorna os bytes."""
 
-    # Fallback 1: busca direto nas transactions via service role (bypassa RLS)
+    # ── total_income: sempre força re-fetch do banco, independente do valor passado ──
+    fetched_income = _fetch_total_income(user_id, reference_month)
+    if fetched_income > 0:
+        total_income = fetched_income
+    # Fallback: mês atual (caso as transações estejam datadas no mês corrente)
     if total_income == 0:
-        total_income = _fetch_total_income(user_id, reference_month)
-
-    # Fallback 2: soma dos snapshots das caixas
+        total_income = _fetch_current_month_income(user_id)
+    # Fallback: soma dos snapshots das caixas
     if total_income == 0:
         total_income = (salary_snapshot or 0.0) + (bills_snapshot or 0.0) + (emergency_snapshot or 0.0)
 
-    # Fallback 1 transações: busca pelo range do mês via service role
-    if not top_transactions:
-        top_transactions = _fetch_top_transactions(user_id, reference_month)
+    # ── snapshots das caixas: se todos zero, usa balances alocados do banco ──
+    if (salary_snapshot or 0.0) == 0.0 and (bills_snapshot or 0.0) == 0.0 and (emergency_snapshot or 0.0) == 0.0:
+        allocated = _fetch_allocated_balances(user_id)
+        salary_snapshot    = allocated["salary"]
+        bills_snapshot     = allocated["bills"]
+        emergency_snapshot = allocated["emergency"]
+        # recalcula total_income com valores reais se ainda for 0
+        if total_income == 0:
+            total_income = salary_snapshot + bills_snapshot + emergency_snapshot
 
-    # Fallback 2 transações: busca as 5 mais recentes sem filtro de data
+    # ── top_transactions: sempre força re-fetch do banco ──
+    fetched_txs = _fetch_top_transactions(user_id, reference_month)
+    if fetched_txs:
+        top_transactions = fetched_txs
+    # Fallback: transações do mês corrente (datas podem diferir do mês solicitado)
+    if not top_transactions:
+        top_transactions = _fetch_current_month_top_transactions(user_id)
+    # Fallback final: qualquer transação do usuário sem filtro de data
     if not top_transactions:
         top_transactions = _fetch_top_transactions_any(user_id)
 
