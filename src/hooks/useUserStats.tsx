@@ -116,17 +116,19 @@ export function useUserStats() {
       fetch(`/api/usuario/${encodeURIComponent(userId)}`),
     ]).then(async ([balRes, txRes, statRes]) => {
       if (balRes.status === "fulfilled" && balRes.value.ok) {
-        const d = await balRes.value.json();
-        setBoxes(buildBoxes(d.salary, d.bills, d.emergency, d.salary_goal, d.bills_goal, d.emergency_goal));
-        setLastUpdated(new Date());
+        const d = await balRes.value.json().catch(() => null);
+        if (d) {
+          setBoxes(buildBoxes(d.salary ?? 0, d.bills ?? 0, d.emergency ?? 0, d.salary_goal ?? salaryGoal, d.bills_goal ?? billsGoal, d.emergency_goal ?? emergencyGoal));
+          setLastUpdated(new Date());
+        }
       }
       if (txRes.status === "fulfilled" && txRes.value.ok) {
-        const d = await txRes.value.json();
-        setTransactions(d.transactions || []);
+        const d = await txRes.value.json().catch(() => null);
+        if (d) setTransactions(d.transactions || []);
       }
       if (statRes.status === "fulfilled" && statRes.value.ok) {
-        const d = await statRes.value.json();
-        setIsPremium(!!d.is_premium);
+        const d = await statRes.value.json().catch(() => null);
+        if (d) setIsPremium(!!d.is_premium);
       }
     }).finally(() => setIsFetching(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
