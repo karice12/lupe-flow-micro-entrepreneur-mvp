@@ -168,3 +168,21 @@ class MonthlyCloseResponse(BaseModel):
     bills_snapshot: float
     emergency_snapshot: float
     total_income: float
+
+
+class MonthlyHistoryItem(BaseModel):
+    reference_month: str
+    salary_snapshot: float
+    bills_snapshot: float
+    emergency_snapshot: float
+    salary_goal: float
+    bills_goal: float
+    emergency_goal: float
+    total_income: float
+    created_at: str
+    income_variation_pct: Optional[float] = None
+
+
+class MonthlyHistoryResponse(BaseModel):
+    history: List[MonthlyHistoryItem]
+    count: int

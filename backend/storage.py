@@ -481,6 +481,42 @@ def get_total_income_for_month(user_id: str, reference_month: str) -> float:
         return 0.0
 
 
+def get_monthly_history(user_id: str, limit: int = 12) -> list[dict]:
+    """
+    Retorna até `limit` fechamentos mensais do usuário, ordenados por
+    reference_month DESC (mais recente primeiro).
+    Inclui variação percentual de total_income em relação ao mês anterior.
+    """
+    sb = get_supabase()
+    try:
+        res = (
+            sb.table("monthly_summaries")
+            .select(
+                "reference_month,salary_snapshot,bills_snapshot,"
+                "emergency_snapshot,salary_goal,bills_goal,emergency_goal,"
+                "total_income,created_at"
+            )
+            .eq("user_id", user_id)
+            .order("reference_month", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        rows = res.data or []
+        for i, row in enumerate(rows):
+            prev = rows[i + 1]["total_income"] if i + 1 < len(rows) else None
+            curr = float(row.get("total_income", 0))
+            if prev and float(prev) > 0:
+                row["income_variation_pct"] = round(
+                    ((curr - float(prev)) / float(prev)) * 100, 1
+                )
+            else:
+                row["income_variation_pct"] = None
+        return rows
+    except Exception as e:
+        logger.warning(f"get_monthly_history error for '{user_id}': {e}")
+        return []
+
+
 def get_all_premium_users() -> list[str]:
     """Return list of user_ids where is_premium = True."""
     sb = get_supabase()

@@ -14,7 +14,7 @@ from backend.models import (
     BankConnection, BankConnectionListResponse, AddBankConnectionRequest,
     CheckoutSessionRequest, CheckoutSessionResponse,
     PluggyTokenResponse, PluggyWebhookPayload,
-    MonthlyCloseResponse,
+    MonthlyCloseResponse, MonthlyHistoryResponse, MonthlyHistoryItem,
 )
 from backend.storage import (
     get_balances, save_balances, get_user_status, upsert_goals, save_consent,
@@ -22,7 +22,7 @@ from backend.storage import (
     list_bank_connections, add_bank_connection, deactivate_bank_connection, count_billable_units,
     save_monthly_summary, get_monthly_summary,
     get_top_transactions_for_month, get_total_income_for_month,
-    get_all_premium_users,
+    get_all_premium_users, get_monthly_history,
 )
 from backend.auth import get_token_user_id, assert_owns_resource
 from backend.stripe_billing import (
@@ -727,6 +727,29 @@ def fechar_mes(
 
 
 # ─── Monthly PDF Report (GET — JWT required, premium only) ────────────────────
+
+@app.get("/usuario/{user_id}/historico/mensal", response_model=MonthlyHistoryResponse)
+def historico_mensal(
+    user_id: str,
+    token_user_id: str = Depends(get_token_user_id),
+    limit: int = Query(default=12, ge=1, le=36, description="Número máximo de meses. Padrão: 12."),
+):
+    """
+    Retorna o histórico de fechamentos mensais do usuário para exibição
+    comparativa no dashboard. Ordenado do mais recente ao mais antigo.
+    Inclui variação percentual de faturamento mês a mês (income_variation_pct).
+    Premium exclusivo.
+    """
+    assert_owns_resource(token_user_id, user_id)
+
+    status = get_user_status(user_id)
+    if not status.get("is_premium"):
+        raise HTTPException(status_code=403, detail="Histórico mensal exclusivo para assinantes Premium.")
+
+    rows = get_monthly_history(user_id, limit=limit)
+    items = [MonthlyHistoryItem(**row) for row in rows]
+    return MonthlyHistoryResponse(history=items, count=len(items))
+
 
 @app.get("/usuario/{user_id}/relatorio/mensal")
 def relatorio_mensal_pdf(
