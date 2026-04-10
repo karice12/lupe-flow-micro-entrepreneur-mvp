@@ -54,57 +54,58 @@ def _get_supabase():
     return create_client(url, key)
 
 
+def _month_range(reference_month: str) -> tuple[str, str]:
+    """Returns (start_iso, end_iso) in UTC with explicit +00:00 offset."""
+    year, month = int(reference_month[:4]), int(reference_month[5:7])
+    start = f"{year:04d}-{month:02d}-01T00:00:00+00:00"
+    if month == 12:
+        end = f"{year + 1:04d}-01-01T00:00:00+00:00"
+    else:
+        end = f"{year:04d}-{month + 1:02d}-01T00:00:00+00:00"
+    return start, end
+
+
 def _fetch_total_income(user_id: str, reference_month: str) -> float:
-    """Fix 2: SUM(amount) from transactions where category != 'saida' for the given month."""
+    """Fallback: SUM(amount) de todas as transações do mês (todas as rows são entradas)."""
     try:
         sb = _get_supabase()
-        month_start = f"{reference_month}-01T00:00:00+00:00"
-        year, month = reference_month.split("-")
-        next_month = int(month) + 1
-        next_year = int(year)
-        if next_month > 12:
-            next_month = 1
-            next_year += 1
-        month_end = f"{next_year:04d}-{next_month:02d}-01T00:00:00+00:00"
+        start_iso, end_iso = _month_range(reference_month)
+        print(f"[PDF][_fetch_total_income] user={user_id} start={start_iso} end={end_iso}", flush=True)
         res = (
             sb.table("transactions")
             .select("amount")
             .eq("user_id", user_id)
-            .neq("category", "saida")
-            .gte("created_at", month_start)
-            .lt("created_at", month_end)
+            .gte("created_at", start_iso)
+            .lt("created_at", end_iso)
             .execute()
         )
-        return sum(row.get("amount", 0) for row in (res.data or []))
-    except Exception:
+        print(f"[PDF][_fetch_total_income] rows={len(res.data or [])} data={res.data}", flush=True)
+        return sum(float(row.get("amount", 0)) for row in (res.data or []))
+    except Exception as e:
+        print(f"[PDF][_fetch_total_income] ERROR: {e}", flush=True)
         return 0.0
 
 
 def _fetch_top_transactions(user_id: str, reference_month: str) -> list[dict]:
-    """Fix 3: Top 5 transactions sorted by amount DESC with proper +00:00 timezone filtering."""
+    """Fallback: Top 5 transações por amount DESC com filtro de data UTC explícito."""
     try:
         sb = _get_supabase()
-        month_start = f"{reference_month}-01T00:00:00+00:00"
-        year, month = reference_month.split("-")
-        next_month = int(month) + 1
-        next_year = int(year)
-        if next_month > 12:
-            next_month = 1
-            next_year += 1
-        month_end = f"{next_year:04d}-{next_month:02d}-01T00:00:00+00:00"
+        start_iso, end_iso = _month_range(reference_month)
+        print(f"[PDF][_fetch_top_transactions] user={user_id} start={start_iso} end={end_iso}", flush=True)
         res = (
             sb.table("transactions")
-            .select("description,amount,category,created_at")
+            .select("id,user_id,amount,category,description,created_at")
             .eq("user_id", user_id)
-            .neq("category", "saida")
-            .gte("created_at", month_start)
-            .lt("created_at", month_end)
+            .gte("created_at", start_iso)
+            .lt("created_at", end_iso)
             .order("amount", desc=True)
             .limit(5)
             .execute()
         )
+        print(f"[PDF][_fetch_top_transactions] rows={len(res.data or [])} data={res.data}", flush=True)
         return res.data or []
-    except Exception:
+    except Exception as e:
+        print(f"[PDF][_fetch_top_transactions] ERROR: {e}", flush=True)
         return []
 
 
@@ -141,11 +142,20 @@ def generate_monthly_pdf(
     """
     Gera o PDF de relatório mensal e retorna os bytes.
     """
-    # Fix 2: recompute total_income directly from the transactions table
-    total_income = _fetch_total_income(user_id, reference_month)
+    print(f"[PDF] user_id={user_id} reference_month={reference_month}", flush=True)
+    print(f"[PDF] total_income={total_income}", flush=True)
+    print(f"[PDF] top_transactions count={len(top_transactions)} data={top_transactions}", flush=True)
+    print(f"[PDF] salary={salary_snapshot}/{salary_goal} bills={bills_snapshot}/{bills_goal} emergency={emergency_snapshot}/{emergency_goal}", flush=True)
 
-    # Fix 3: recompute top_transactions with proper +00:00 filtering and DESC sort
-    top_transactions = _fetch_top_transactions(user_id, reference_month)
+    # Se total_income vier zero do caller, tenta buscar direto do banco
+    if total_income == 0:
+        total_income = _fetch_total_income(user_id, reference_month)
+        print(f"[PDF] total_income fallback from DB={total_income}", flush=True)
+
+    # Se top_transactions vier vazio do caller, tenta buscar direto do banco
+    if not top_transactions:
+        top_transactions = _fetch_top_transactions(user_id, reference_month)
+        print(f"[PDF] top_transactions fallback from DB count={len(top_transactions)} data={top_transactions}", flush=True)
 
     buf = io.BytesIO()
     c = pdf_canvas.Canvas(buf, pagesize=A4)
