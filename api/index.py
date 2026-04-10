@@ -3,34 +3,29 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from backend.main import app as _backend_app
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from backend.main import app
 
 
-class _StripApiPrefix:
+class _StripApiPrefix(BaseHTTPMiddleware):
     """
-    ASGI middleware that strips the /api prefix from request paths.
+    Strip /api/ prefix before FastAPI routing.
 
-    Vite dev proxy: rewrites /api/saldos → localhost:8000/saldos (prefix stripped).
-    Vercel production: /api/saldos arrives at this function with the full path,
-    so we strip /api here to match the same FastAPI route definitions.
-
-    /webhook/* paths are passed through unchanged because FastAPI already
-    defines those routes without an /api prefix.
+    Vite dev proxy rewrites /api/saldos -> localhost:8000/saldos (prefix stripped).
+    Vercel serverless passes the full path, so we strip it here to match the same
+    route definitions. /webhook/* paths are unchanged as FastAPI already defines them.
     """
 
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] in ("http", "websocket"):
-            path: str = scope.get("path", "")
-            if path.startswith("/api/"):
-                new_path = path[4:]
-                scope = dict(scope)
-                scope["path"] = new_path
-                scope["raw_path"] = new_path.encode()
-        await self.app(scope, receive, send)
+    async def dispatch(self, request: Request, call_next):
+        path = request.scope.get("path", "")
+        if path.startswith("/api/"):
+            stripped = path[4:]
+            request.scope["path"] = stripped
+            request.scope["raw_path"] = stripped.encode()
+        return await call_next(request)
 
 
-app = _StripApiPrefix(_backend_app)
+app.add_middleware(_StripApiPrefix)
+
 handler = app
