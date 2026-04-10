@@ -4,24 +4,11 @@ let _client: SupabaseClient | null = null;
 let _initPromise: Promise<SupabaseClient | null> | null = null;
 
 async function initClient(): Promise<SupabaseClient | null> {
-  let supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? "").trim().replace(/^["']|["']$/g, "");
-  let supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim().replace(/^["']|["']$/g, "");
-
-  if (!supabaseUrl || !supabaseUrl.startsWith("http")) {
-    try {
-      const res = await fetch("/api/config/supabase");
-      if (res.ok) {
-        const cfg = await res.json();
-        supabaseUrl = (cfg.url ?? "").trim();
-        supabaseAnonKey = (cfg.anon_key ?? "").trim();
-      }
-    } catch {
-      // ignore
-    }
-  }
+  const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? "").trim().replace(/^["']|["']$/g, "");
+  const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim().replace(/^["']|["']$/g, "");
 
   if (!supabaseUrl || !supabaseAnonKey || !supabaseUrl.startsWith("http")) {
-    console.error("Configurações do Supabase não encontradas!");
+    console.error("[Supabase] VITE_SUPABASE_URL ou VITE_SUPABASE_ANON_KEY não definidas.");
     return null;
   }
 

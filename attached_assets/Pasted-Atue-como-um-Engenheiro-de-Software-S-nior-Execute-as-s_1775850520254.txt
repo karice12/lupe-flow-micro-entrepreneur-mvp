@@ -1,0 +1,23 @@
+Atue como um Engenheiro de Software Sênior. Execute as seguintes correções de estabilidade e paridade (Replit ↔ Vercel) de forma cirúrgica. NÃO faça refatorações de código não solicitadas, NÃO adicione novas bibliotecas e NÃO forneça explicações redundantes. Entregue apenas o código corrigido para os arquivos abaixo:
+
+1. Arquivo: `useUserStats.tsx` (Foco nas linhas 69-72, 92-94, 119-132)
+- Problema: Falta de tratamento de erros em chamadas `res.json()`.
+- Ação: Envolva as chamadas de fetch e resolução de JSON em blocos `try-catch`. Se houver erro, garanta que o estado retorne saldos zerados ou indefinidos de forma controlada, evitando a exibição de ícones de erro quebrados no Dashboard.
+
+2. Arquivo: `PixSimulator.tsx` (Foco nas linhas 51-53)
+- Problema: Ausência de fallback em falha de rede.
+- Ação: Adicione tratamento de erro no bloco correspondente. Em caso de falha na requisição, o componente DEVE retornar/exibir o valor padrão de `R$ 0,00` no dashboard, sem quebrar a interface.
+
+3. Arquivo: `src/lib/supabase.ts`
+- Problema: Fallback de configuração tentando acessar `/api/config/supabase` (rota inexistente).
+- Ação: Remova a lógica de fallback para essa rota. O cliente do Supabase deve ser inicializado dependendo estritamente das variáveis de ambiente padrão do frontend (`VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`). Lance um erro claro no console caso as variáveis não estejam presentes.
+
+4. Configuração de CORS (Backend / `api/index.py`)
+- Problema: O ambiente da Vercel não possui `REPLIT_DEV_DOMAIN`.
+- Ação: Atualize a configuração de CORS no backend para aceitar dinamicamente a URL da Vercel (ex: lendo uma variável de ambiente `VERCEL_URL` ou `FRONTEND_URL`) além de manter o suporte para o ambiente de desenvolvimento do Replit.
+
+5. Padronização de Rotas (Frontend / Services)
+- Problema: Risco de bypass do rewrite do `vercel.json`.
+- Ação: Revise as chamadas de API no frontend (especialmente nos hooks e simulador) para garantir que TODAS utilizem estritamente o caminho relativo iniciando com `/api/` (ex: `fetch('/api/endpoint')`), garantindo o roteamento correto em produção.
+
+Gere as modificações precisas para cada arquivo mencionado.

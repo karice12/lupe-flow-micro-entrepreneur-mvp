@@ -70,12 +70,14 @@ export function useUserStats() {
         const e = await res.json().catch(() => ({}));
         throw new Error(e.detail || "Erro ao carregar saldos.");
       }
-      const data = await res.json();
-      setBoxes(buildBoxes(
-        data.salary, data.bills, data.emergency,
-        data.salary_goal, data.bills_goal, data.emergency_goal,
-      ));
-      setLastUpdated(new Date());
+      const data = await res.json().catch(() => null);
+      if (data) {
+        setBoxes(buildBoxes(
+          data.salary ?? 0, data.bills ?? 0, data.emergency ?? 0,
+          data.salary_goal ?? salaryGoal, data.bills_goal ?? billsGoal, data.emergency_goal ?? emergencyGoal,
+        ));
+        setLastUpdated(new Date());
+      }
     } catch (err: unknown) {
       if (!silent) {
         const msg = err instanceof Error ? err.message : "Não foi possível carregar os saldos.";
@@ -91,8 +93,8 @@ export function useUserStats() {
     try {
       const res = await fetch(`/api/transactions?user_id=${encodeURIComponent(userId)}&limit=${limit}`);
       if (!res.ok) return;
-      const data = await res.json();
-      setTransactions(data.transactions || []);
+      const data = await res.json().catch(() => null);
+      setTransactions(data?.transactions || []);
     } catch {
       // silent — feed is non-critical
     }
