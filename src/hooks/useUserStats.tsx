@@ -66,10 +66,7 @@ export function useUserStats() {
 
     try {
       const res = await fetch(`/api/saldos?${params}`);
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        throw new Error(e.detail || "Erro ao carregar saldos.");
-      }
+      if (!res.ok) return;
       const data = await res.json().catch(() => null);
       if (data) {
         setBoxes(buildBoxes(
@@ -78,11 +75,8 @@ export function useUserStats() {
         ));
         setLastUpdated(new Date());
       }
-    } catch (err: unknown) {
-      if (!silent) {
-        const msg = err instanceof Error ? err.message : "Não foi possível carregar os saldos.";
-        toast.error(msg);
-      }
+    } catch {
+      // silent — dashboard keeps showing R$ 0,00
     } finally {
       if (silent) setIsRefreshing(false);
     }

@@ -50,7 +50,8 @@ export function PixSimulator({ userId, isPremium, onRequestPremium }: PixEntryCa
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || "Erro ao registrar entrada.");
+        toast.error(err.detail || "Erro ao registrar entrada.");
+        return;
       }
       const data = await res.json().catch(() => ({ allocated_salary: 0, allocated_bills: 0, allocated_emergency: 0 }));
       toast.success(`Entrada de ${formatCurrency(valor)} registrada!`, {
