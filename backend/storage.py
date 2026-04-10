@@ -51,11 +51,13 @@ def get_user_status(user_id: str) -> dict:
         has_goals = sg > 0 and bg > 0 and eg > 0
         lgpd = bool(d.get("lgpd_accepted", False))
         is_premium = bool(d.get("is_premium", False))
+        plan_cycle = d.get("plan_cycle") or "monthly"
         return {
             "exists": True,
             "has_goals": has_goals,
             "lgpd_accepted": lgpd,
             "is_premium": is_premium,
+            "plan_cycle": plan_cycle,
             "salary_goal": float(sg),
             "bills_goal": float(bg),
             "emergency_goal": float(eg),
@@ -89,6 +91,7 @@ def set_premium(user_id: str, value: bool) -> None:
             sb.table("user_balances").insert({
                 "user_id":        user_id,
                 "is_premium":     value,
+                "plan_cycle":     "monthly",
                 "salary":         0,
                 "bills":          0,
                 "emergency":      0,
