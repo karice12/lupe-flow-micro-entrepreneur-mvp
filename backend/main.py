@@ -775,10 +775,7 @@ def relatorio_mensal_pdf(
     from backend.pdf_report import generate_monthly_pdf
 
     if not month:
-        today = datetime.now(timezone.utc)
-        first_of_month = today.replace(day=1)
-        last_month = first_of_month - timedelta(days=1)
-        month = last_month.strftime("%Y-%m")
+        month = datetime.now(timezone.utc).strftime("%Y-%m")
 
     summary = get_monthly_summary(user_id, month)
     top_txs  = get_top_transactions_for_month(user_id, month, limit=5)

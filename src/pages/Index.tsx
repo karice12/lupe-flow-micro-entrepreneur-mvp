@@ -53,12 +53,9 @@ const Index = () => {
 
   const totalBalance = boxes.reduce((s, b) => s + b.accumulated, 0);
 
-  const prevMonthLabel = (() => {
-    const d = new Date();
-    d.setDate(1);
-    d.setMonth(d.getMonth() - 1);
-    return d.toLocaleString("pt-BR", { month: "long", year: "numeric" });
-  })();
+  const currentMonthParam = new Date().toISOString().slice(0, 7);
+
+  const currentMonthLabel = new Date().toLocaleString("pt-BR", { month: "long", year: "numeric" });
 
   const handleDownloadRelatorio = async () => {
     if (!isPremium) { setShowPremiumModal(true); return; }
@@ -66,9 +63,10 @@ const Index = () => {
     try {
       const token = await getAccessToken();
       if (!token) throw new Error("Sessão expirada.");
-      const res = await fetch(`/api/usuario/${encodeURIComponent(userId)}/relatorio/mensal`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(
+        `/api/usuario/${encodeURIComponent(userId)}/relatorio/mensal?month=${currentMonthParam}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || "Erro ao gerar relatório.");
@@ -77,7 +75,7 @@ const Index = () => {
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement("a");
       a.href     = url;
-      a.download = `lupeflow-relatorio-${new Date().toISOString().slice(0, 7)}.pdf`;
+      a.download = `lupeflow-relatorio-${currentMonthParam}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -314,7 +312,7 @@ const Index = () => {
             </div>
             <div className="text-left min-w-0">
               <p className="text-sm font-semibold text-foreground">
-                {isDownloadingPdf ? "Gerando PDF..." : `Baixar Relatório — ${prevMonthLabel}`}
+                {isDownloadingPdf ? "Gerando PDF..." : `Baixar Relatório — ${currentMonthLabel}`}
               </p>
               <p className="text-xs text-muted-foreground truncate">
                 {isPremium
