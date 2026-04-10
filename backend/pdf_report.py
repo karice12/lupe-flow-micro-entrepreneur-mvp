@@ -109,6 +109,26 @@ def _fetch_top_transactions(user_id: str, reference_month: str) -> list[dict]:
         return []
 
 
+def _fetch_top_transactions_any(user_id: str) -> list[dict]:
+    """Last-resort: Top 5 transações mais recentes do user, sem filtro de data."""
+    try:
+        sb = _get_supabase()
+        print(f"[PDF][_fetch_top_transactions_any] user={user_id} sem filtro de data", flush=True)
+        res = (
+            sb.table("transactions")
+            .select("id,user_id,amount,category,description,created_at")
+            .eq("user_id", user_id)
+            .order("amount", desc=True)
+            .limit(5)
+            .execute()
+        )
+        print(f"[PDF][_fetch_top_transactions_any] rows={len(res.data or [])} data={res.data}", flush=True)
+        return res.data or []
+    except Exception as e:
+        print(f"[PDF][_fetch_top_transactions_any] ERROR: {e}", flush=True)
+        return []
+
+
 def _rect(c: pdf_canvas.Canvas, x, y, w, h, fill_color, radius=4):
     c.setFillColor(fill_color)
     c.roundRect(x, y, w, h, radius, fill=1, stroke=0)
@@ -143,19 +163,29 @@ def generate_monthly_pdf(
     Gera o PDF de relatório mensal e retorna os bytes.
     """
     print(f"[PDF] user_id={user_id} reference_month={reference_month}", flush=True)
-    print(f"[PDF] total_income={total_income}", flush=True)
-    print(f"[PDF] top_transactions count={len(top_transactions)} data={top_transactions}", flush=True)
+    print(f"[PDF] total_income(caller)={total_income}", flush=True)
+    print(f"[PDF] top_transactions(caller) count={len(top_transactions)} data={top_transactions}", flush=True)
     print(f"[PDF] salary={salary_snapshot}/{salary_goal} bills={bills_snapshot}/{bills_goal} emergency={emergency_snapshot}/{emergency_goal}", flush=True)
 
-    # Se total_income vier zero do caller, tenta buscar direto do banco
+    # Fallback 1: se total_income vier zero, busca na tabela transactions pelo range do mês
     if total_income == 0:
         total_income = _fetch_total_income(user_id, reference_month)
-        print(f"[PDF] total_income fallback from DB={total_income}", flush=True)
+        print(f"[PDF] total_income(transactions_query)={total_income}", flush=True)
 
-    # Se top_transactions vier vazio do caller, tenta buscar direto do banco
+    # Fallback 2: se ainda zero, usa soma dos snapshots das caixas (já passados como parâmetro)
+    if total_income == 0:
+        total_income = (salary_snapshot or 0.0) + (bills_snapshot or 0.0) + (emergency_snapshot or 0.0)
+        print(f"[PDF] total_income(snapshots_sum)={total_income}", flush=True)
+
+    # Fallback 1 transações: se vazio, busca no range do mês diretamente
     if not top_transactions:
         top_transactions = _fetch_top_transactions(user_id, reference_month)
-        print(f"[PDF] top_transactions fallback from DB count={len(top_transactions)} data={top_transactions}", flush=True)
+        print(f"[PDF] top_transactions(date_range_query) count={len(top_transactions)}", flush=True)
+
+    # Fallback 2 transações: se ainda vazio, busca as 5 mais recentes sem filtro de data
+    if not top_transactions:
+        top_transactions = _fetch_top_transactions_any(user_id)
+        print(f"[PDF] top_transactions(any_query) count={len(top_transactions)} data={top_transactions}", flush=True)
 
     buf = io.BytesIO()
     c = pdf_canvas.Canvas(buf, pagesize=A4)
