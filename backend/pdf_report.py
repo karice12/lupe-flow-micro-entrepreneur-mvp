@@ -5,7 +5,8 @@ Paleta: fundo escuro (#0F1117), laranja primário (#F97316), branco/cinza claro.
 """
 
 import io
-from datetime import datetime
+import os
+from datetime import datetime, timezone
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib import colors
@@ -46,6 +47,67 @@ def _brl(value: float) -> str:
     return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def _get_supabase():
+    from supabase import create_client
+    url = os.getenv("SUPABASE_URL", "").strip()
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip() or os.getenv("SUPABASE_ANON_KEY", "").strip()
+    return create_client(url, key)
+
+
+def _fetch_total_income(user_id: str, reference_month: str) -> float:
+    """Fix 2: SUM(amount) from transactions where category != 'saida' for the given month."""
+    try:
+        sb = _get_supabase()
+        month_start = f"{reference_month}-01T00:00:00+00:00"
+        year, month = reference_month.split("-")
+        next_month = int(month) + 1
+        next_year = int(year)
+        if next_month > 12:
+            next_month = 1
+            next_year += 1
+        month_end = f"{next_year:04d}-{next_month:02d}-01T00:00:00+00:00"
+        res = (
+            sb.table("transactions")
+            .select("amount")
+            .eq("user_id", user_id)
+            .neq("category", "saida")
+            .gte("created_at", month_start)
+            .lt("created_at", month_end)
+            .execute()
+        )
+        return sum(row.get("amount", 0) for row in (res.data or []))
+    except Exception:
+        return 0.0
+
+
+def _fetch_top_transactions(user_id: str, reference_month: str) -> list[dict]:
+    """Fix 3: Top 5 transactions sorted by amount DESC with proper +00:00 timezone filtering."""
+    try:
+        sb = _get_supabase()
+        month_start = f"{reference_month}-01T00:00:00+00:00"
+        year, month = reference_month.split("-")
+        next_month = int(month) + 1
+        next_year = int(year)
+        if next_month > 12:
+            next_month = 1
+            next_year += 1
+        month_end = f"{next_year:04d}-{next_month:02d}-01T00:00:00+00:00"
+        res = (
+            sb.table("transactions")
+            .select("description,amount,category,created_at")
+            .eq("user_id", user_id)
+            .neq("category", "saida")
+            .gte("created_at", month_start)
+            .lt("created_at", month_end)
+            .order("amount", desc=True)
+            .limit(5)
+            .execute()
+        )
+        return res.data or []
+    except Exception:
+        return []
+
+
 def _rect(c: pdf_canvas.Canvas, x, y, w, h, fill_color, radius=4):
     c.setFillColor(fill_color)
     c.roundRect(x, y, w, h, radius, fill=1, stroke=0)
@@ -79,6 +141,12 @@ def generate_monthly_pdf(
     """
     Gera o PDF de relatório mensal e retorna os bytes.
     """
+    # Fix 2: recompute total_income directly from the transactions table
+    total_income = _fetch_total_income(user_id, reference_month)
+
+    # Fix 3: recompute top_transactions with proper +00:00 filtering and DESC sort
+    top_transactions = _fetch_top_transactions(user_id, reference_month)
+
     buf = io.BytesIO()
     c = pdf_canvas.Canvas(buf, pagesize=A4)
     c.setTitle(f"Lupe Flow — Relatório {reference_month}")
