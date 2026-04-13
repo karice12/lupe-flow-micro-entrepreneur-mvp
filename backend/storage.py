@@ -24,16 +24,14 @@ def get_supabase():
             detail="Banco de dados não configurado. Verifique as variáveis SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY (ou SUPABASE_ANON_KEY)."
         )
     key_type = "service_role" if service_key else "anon"
-    print(f"[Supabase] Tentando conectar ao Supabase em: {url} (key_type={key_type})", flush=True)
+    logger.info(f"[Supabase] Inicializando cliente: url={url[:40]} key_type={key_type}")
     try:
         from supabase import create_client
         _supabase_client = create_client(url, key)
         logger.info(f"Supabase client initialized successfully (key_type={key_type}).")
-        print(f"[Supabase] Cliente inicializado com sucesso (key_type={key_type})", flush=True)
         return _supabase_client
     except Exception as e:
         logger.error(f"Failed to initialize Supabase client: {e}")
-        print(f"[Supabase] ERRO ao inicializar cliente: {e}", flush=True)
         raise HTTPException(status_code=503, detail=f"Falha ao conectar ao banco de dados: {e}")
 
 

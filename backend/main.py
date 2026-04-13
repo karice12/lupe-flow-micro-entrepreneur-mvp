@@ -243,11 +243,11 @@ def cancelar_premium(
     return {"message": "Assinatura cancelada.", "is_premium": False}
 
 
-# ─── Balances (read — no JWT required; isolated by user_id server-side) ──────
+# ─── Balances (read — JWT required) ──────────────────────────────────────────
 
 @app.get("/saldos", response_model=PixResponse)
 def get_saldos(
-    user_id: str = Query(default="usuario_teste"),
+    token_user_id: str = Depends(get_token_user_id),
     salary_goal: float = Query(default=3000.0),
     bills_goal: float = Query(default=1500.0),
     emergency_goal: float = Query(default=10000.0),
@@ -257,7 +257,7 @@ def get_saldos(
         "bills_goal": bills_goal,
         "emergency_goal": emergency_goal,
     }
-    balance = get_balances(user_id, defaults)
+    balance = get_balances(token_user_id, defaults)
     return PixResponse(
         salary=round(balance.salary, 2),
         bills=round(balance.bills, 2),
@@ -272,14 +272,14 @@ def get_saldos(
     )
 
 
-# ─── Transactions feed (read) ─────────────────────────────────────────────────
+# ─── Transactions feed (read — JWT required) ──────────────────────────────────
 
 @app.get("/transactions", response_model=TransactionsResponse)
 def get_transactions(
-    user_id: str = Query(default="usuario_teste"),
+    token_user_id: str = Depends(get_token_user_id),
     limit: int = Query(default=10, le=50),
 ):
-    rows = get_recent_transactions(user_id, limit)
+    rows = get_recent_transactions(token_user_id, limit)
     items = [
         TransactionItem(
             id=str(r.get("id", "")),
