@@ -49,7 +49,7 @@ def _get_frontend_url() -> str:
     if dev_domain:
         return f"https://{dev_domain}"
 
-    return "http://localhost:5000"
+    return "https://lupe-flow-micro-entrepreneur-mvp.vercel.app"
 
 
 def _build_line_items(plan_cycle: str, extra_banks: int) -> list[dict]:
