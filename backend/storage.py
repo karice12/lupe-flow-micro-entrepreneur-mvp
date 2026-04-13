@@ -251,7 +251,8 @@ def log_transaction(
         sb.table("transactions").insert(row).execute()
         logger.info(f"Transaction logged: user={user_id} category={category} amount={amount}")
     except Exception as e:
-        logger.warning(f"Could not log transaction for '{user_id}': {e}. Continuing without log.")
+        logger.error(f"log_transaction FAILED for user='{user_id}' category={category} amount={amount}: {e}")
+        raise
 
 
 def get_recent_transactions(user_id: str, limit: int = 10) -> list:

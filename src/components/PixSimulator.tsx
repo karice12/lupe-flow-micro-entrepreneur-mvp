@@ -10,12 +10,13 @@ interface PixEntryCardProps {
   userId: string;
   isPremium: boolean;
   onRequestPremium?: () => void;
+  onSuccess?: () => void;
 }
 
 const formatCurrency = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-export function PixSimulator({ userId, isPremium, onRequestPremium }: PixEntryCardProps) {
+export function PixSimulator({ userId, isPremium, onRequestPremium, onSuccess }: PixEntryCardProps) {
   const [amount, setAmount]           = useState("");
   const [description, setDescription] = useState("");
   const [isLoading, setIsLoading]     = useState(false);
@@ -59,6 +60,7 @@ export function PixSimulator({ userId, isPremium, onRequestPremium }: PixEntryCa
       });
       setAmount("");
       setDescription("");
+      onSuccess?.();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Erro ao registrar entrada.";
       toast.error(message);

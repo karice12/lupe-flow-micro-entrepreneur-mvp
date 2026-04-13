@@ -226,6 +226,7 @@ const Index = () => {
           userId={userId}
           isPremium={isPremium}
           onRequestPremium={() => setShowPremiumModal(true)}
+          onSuccess={() => { fetchBalances(true); fetchTransactions(); }}
         />
 
         {/* ── Bank Connections ────────────────────────────────────────── */}
