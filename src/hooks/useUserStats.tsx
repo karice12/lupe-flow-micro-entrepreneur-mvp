@@ -3,6 +3,7 @@ import { Wallet, ShieldCheck, Receipt } from "lucide-react";
 import { toast } from "sonner";
 import { useGoals } from "@/contexts/GoalsContext";
 import { getSupabaseClient } from "@/lib/supabase";
+import { DEMO_PIX_EVENT } from "@/lib/demoInterceptor";
 
 const formatCurrency = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -93,6 +94,16 @@ export function useUserStats() {
       // silent — feed is non-critical
     }
   }, [userId]);
+
+  // ── Demo mode: refresh balances after intercepted PIX ────────────────────
+  useEffect(() => {
+    const handler = () => {
+      fetchBalances(true);
+      fetchTransactions();
+    };
+    window.addEventListener(DEMO_PIX_EVENT, handler);
+    return () => window.removeEventListener(DEMO_PIX_EVENT, handler);
+  }, [fetchBalances, fetchTransactions]);
 
   // ── Initial parallel load (balances + transactions + premium status) ─────
   useEffect(() => {

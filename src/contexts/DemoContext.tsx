@@ -9,6 +9,7 @@ import {
   installDemoInterceptor,
   uninstallDemoInterceptor,
 } from "@/lib/demoInterceptor";
+import { setDemoActive } from "@/lib/demoState";
 
 interface DemoContextType {
   isDemoMode: boolean;
@@ -28,12 +29,14 @@ export const DemoProvider = ({ children }: { children: ReactNode }) => {
   const [isDemoMode, setIsDemoMode] = useState(false);
 
   const activateDemo = useCallback(() => {
+    setDemoActive(true);
     installDemoInterceptor();
     setIsDemoMode(true);
   }, []);
 
   const deactivateDemo = useCallback(() => {
     uninstallDemoInterceptor();
+    setDemoActive(false);
     setIsDemoMode(false);
   }, []);
 

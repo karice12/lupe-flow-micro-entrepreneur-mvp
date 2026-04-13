@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { getSupabaseClient } from "@/lib/supabase";
+import { isDemoActive } from "@/lib/demoState";
 
 export interface Goals {
   salary: number;
@@ -56,7 +57,7 @@ export const GoalsProvider = ({ children }: { children: ReactNode }) => {
       const { data: { subscription } } = sb.auth.onAuthStateChange((_event, session) => {
         if (session?.user) {
           setUserId(session.user.id);
-        } else {
+        } else if (!isDemoActive()) {
           setUserId("");
           setGoals(null);
           setIsPremium(false);
