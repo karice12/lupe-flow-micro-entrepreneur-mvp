@@ -73,20 +73,30 @@ def set_premium(user_id: str, value: bool) -> None:
     - If the row already exists: UPDATE only is_premium — balances are NEVER touched.
     - If the row is new: INSERT with zeroed balances (safe because user has no data yet).
     """
+    # Log which Supabase key type is active so webhook debug is visible in logs
+    _svc = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    _key_type = "service_role" if _svc else "anon"
+    logger.info(f"set_premium called — user='{user_id}' value={value} key_type={_key_type}")
+
     sb = get_supabase()
     try:
         check = sb.table("user_balances").select("user_id").eq("user_id", user_id).limit(1).execute()
+        row_exists = bool(check.data)
+        logger.info(f"set_premium row_exists={row_exists} — user='{user_id}'")
 
-        if check.data:
+        if row_exists:
             # Row exists — only flip is_premium, leave all balance/goal columns intact
-            sb.table("user_balances") \
-              .update({"is_premium": value}) \
-              .eq("user_id", user_id) \
-              .execute()
-            logger.info(f"set_premium UPDATE OK — user='{user_id}' is_premium={value}")
+            res = sb.table("user_balances") \
+                    .update({"is_premium": value}) \
+                    .eq("user_id", user_id) \
+                    .execute()
+            logger.info(
+                f"set_premium UPDATE OK — user='{user_id}' is_premium={value} "
+                f"rows_affected={len(res.data or [])}"
+            )
         else:
             # Brand-new user — safe to INSERT with zeroed defaults
-            sb.table("user_balances").insert({
+            res = sb.table("user_balances").insert({
                 "user_id":        user_id,
                 "is_premium":     value,
                 "plan_cycle":     "monthly",
@@ -98,16 +108,20 @@ def set_premium(user_id: str, value: bool) -> None:
                 "emergency_goal": 0,
                 "lgpd_accepted":  False,
             }).execute()
-            logger.info(f"set_premium INSERT OK — user='{user_id}' is_premium={value} (new row)")
+            logger.info(
+                f"set_premium INSERT OK — user='{user_id}' is_premium={value} (new row) "
+                f"rows_affected={len(res.data or [])}"
+            )
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(
-            f"set_premium FAILED for user='{user_id}' is_premium={value} "
-            f"error_type={type(e).__name__} detail={e}",
+            f"set_premium FAILED — user='{user_id}' is_premium={value} "
+            f"key_type={_key_type} error_type={type(e).__name__} detail={e}",
             exc_info=True,
         )
+        print(f"ERRO SUPABASE: set_premium FAILED — user={user_id} key_type={_key_type} erro={e}", flush=True)
         raise HTTPException(
             status_code=503,
             detail=f"Erro ao atualizar assinatura: [{type(e).__name__}] {e}",

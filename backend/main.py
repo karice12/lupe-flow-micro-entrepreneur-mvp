@@ -553,47 +553,82 @@ async def stripe_webhook(request: Request):
     logger.info(f"Stripe webhook received: type='{event_type}'")
 
     if event_type == "checkout.session.completed":
-        session    = event["data"]["object"]
-        payment_ok = session.get("payment_status") == "paid"
-        user_id    = (
-            session.get("client_reference_id")
-            or (session.get("metadata") or {}).get("user_id")
+        session        = event["data"]["object"]
+        payment_status = session.get("payment_status", "")
+        # "paid" = one-time or subscription first payment succeeded
+        # "no_payment_required" = free-trial or 100%-off coupon — still grant premium
+        payment_ok = payment_status in ("paid", "no_payment_required")
+
+        client_ref = (session.get("client_reference_id") or "").strip()
+        meta_uid   = ((session.get("metadata") or {}).get("user_id") or "").strip()
+        user_id    = client_ref or meta_uid
+
+        logger.info(
+            f"[Webhook] checkout.session.completed — "
+            f"payment_status='{payment_status}' payment_ok={payment_ok} "
+            f"client_reference_id='{client_ref}' metadata.user_id='{meta_uid}' "
+            f"resolved_user_id='{user_id}'"
         )
 
-        if payment_ok and user_id:
-            try:
-                plan_cycle = (session.get("metadata") or {}).get("plan_cycle", "monthly")
-                set_premium(user_id, True)
-                # Persist plan_cycle if available
-                sb = None
-                try:
-                    from backend.storage import get_supabase
-                    sb = get_supabase()
-                    sb.table("user_balances") \
-                      .update({"plan_cycle": plan_cycle}) \
-                      .eq("user_id", user_id) \
-                      .execute()
-                except Exception as sb_e:
-                    logger.warning(f"Could not persist plan_cycle for '{user_id}': {sb_e}")
-
-                logger.info(f"Premium activated via Stripe webhook: user='{user_id}' plan='{plan_cycle}'")
-            except Exception as e:
-                logger.error(f"Failed to activate premium for '{user_id}' via webhook: {e}", exc_info=True)
-                raise HTTPException(status_code=500, detail="Erro ao ativar premium.")
-        else:
-            logger.warning(
-                f"checkout.session.completed ignored: payment_ok={payment_ok} user_id={user_id}"
+        if not user_id:
+            logger.error(
+                "[Webhook] ERRO: user_id não encontrado no evento Stripe. "
+                f"session_id='{session.get('id')}' metadata={session.get('metadata')}"
             )
+            print(f"ERRO SUPABASE: user_id ausente no evento Stripe — session={session.get('id')}", flush=True)
+            return {"received": True}
+
+        if not payment_ok:
+            logger.warning(
+                f"[Webhook] checkout.session.completed ignorado — "
+                f"payment_status='{payment_status}' user_id='{user_id}'"
+            )
+            return {"received": True}
+
+        plan_cycle = ((session.get("metadata") or {}).get("plan_cycle") or "monthly").strip()
+
+        # 1 — Activate premium
+        try:
+            set_premium(user_id, True)
+            logger.info(f"[Webhook] set_premium(True) OK — user='{user_id}'")
+        except Exception as e:
+            logger.error(f"[Webhook] set_premium FALHOU para '{user_id}': {e}", exc_info=True)
+            print(f"ERRO SUPABASE: set_premium falhou — user={user_id} erro={e}", flush=True)
+            raise HTTPException(status_code=500, detail="Erro ao ativar premium.")
+
+        # 2 — Persist plan_cycle (non-fatal)
+        try:
+            from backend.storage import get_supabase
+            sb = get_supabase()
+            res = (
+                sb.table("user_balances")
+                  .update({"plan_cycle": plan_cycle})
+                  .eq("user_id", user_id)
+                  .execute()
+            )
+            logger.info(
+                f"[Webhook] plan_cycle='{plan_cycle}' persistido — "
+                f"user='{user_id}' rows_affected={len(res.data or [])}"
+            )
+        except Exception as sb_e:
+            logger.warning(f"[Webhook] Falha ao persistir plan_cycle para '{user_id}': {sb_e}")
+            print(f"ERRO SUPABASE: plan_cycle update falhou — user={user_id} erro={sb_e}", flush=True)
+
+        logger.info(f"[Webhook] Premium ativado com sucesso — user='{user_id}' plan='{plan_cycle}'")
 
     elif event_type == "customer.subscription.deleted":
         session = event["data"]["object"]
-        user_id = (session.get("metadata") or {}).get("user_id")
+        user_id = ((session.get("metadata") or {}).get("user_id") or "").strip()
+        logger.info(f"[Webhook] customer.subscription.deleted — user_id='{user_id}'")
         if user_id:
             try:
                 set_premium(user_id, False)
-                logger.info(f"Premium cancelled via Stripe webhook: user='{user_id}'")
+                logger.info(f"[Webhook] Premium cancelado — user='{user_id}'")
             except Exception as e:
-                logger.error(f"Failed to cancel premium for '{user_id}' via webhook: {e}", exc_info=True)
+                logger.error(f"[Webhook] Falha ao cancelar premium para '{user_id}': {e}", exc_info=True)
+                print(f"ERRO SUPABASE: cancelar premium falhou — user={user_id} erro={e}", flush=True)
+        else:
+            logger.warning("[Webhook] customer.subscription.deleted sem user_id no metadata.")
 
     return {"received": True}
 
