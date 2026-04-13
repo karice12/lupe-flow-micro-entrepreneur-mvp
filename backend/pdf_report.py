@@ -214,46 +214,52 @@ def generate_monthly_pdf(
     total_income: float,
     top_transactions: list[dict],
     total_balance: float = 0.0,
+    force_values: bool = False,
 ) -> bytes:
-    """Gera o PDF de relatório mensal e retorna os bytes."""
+    """Gera o PDF de relatório mensal e retorna os bytes.
 
-    # ── total_income: sempre força re-fetch do banco, independente do valor passado ──
-    fetched_income = _fetch_total_income(user_id, reference_month)
-    if fetched_income > 0:
-        total_income = fetched_income
-    # Fallback: mês atual (caso as transações estejam datadas no mês corrente)
-    if total_income == 0:
-        total_income = _fetch_current_month_income(user_id)
-    # Fallback: soma dos snapshots das caixas
-    if total_income == 0:
-        total_income = (salary_snapshot or 0.0) + (bills_snapshot or 0.0) + (emergency_snapshot or 0.0)
+    Quando force_values=True, os valores passados são usados diretamente sem
+    nenhum re-fetch do banco — ideal para dados já validados pelo chamador
+    (endpoint real) ou para o modo demo (dados estáticos de _DEMO_DATA).
+    """
 
-    # ── snapshots das caixas: se todos zero, usa balances alocados do banco ──
-    if (salary_snapshot or 0.0) == 0.0 and (bills_snapshot or 0.0) == 0.0 and (emergency_snapshot or 0.0) == 0.0:
-        allocated = _fetch_allocated_balances(user_id)
-        salary_snapshot    = allocated["salary"]
-        bills_snapshot     = allocated["bills"]
-        emergency_snapshot = allocated["emergency"]
-        # recalcula total_income com valores reais se ainda for 0
+    if force_values:
+        # Usa exatamente os valores passados pelo chamador — sem tocar no banco.
+        if total_balance == 0.0:
+            total_balance = (salary_snapshot or 0.0) + (bills_snapshot or 0.0) + (emergency_snapshot or 0.0)
+    else:
+        # ── total_income: re-fetch do banco como fallback ──────────────────
+        fetched_income = _fetch_total_income(user_id, reference_month)
+        if fetched_income > 0:
+            total_income = fetched_income
         if total_income == 0:
-            total_income = salary_snapshot + bills_snapshot + emergency_snapshot
+            total_income = _fetch_current_month_income(user_id)
+        if total_income == 0:
+            total_income = (salary_snapshot or 0.0) + (bills_snapshot or 0.0) + (emergency_snapshot or 0.0)
 
-    # ── total_balance: sempre busca soma real das caixas do banco ──
-    allocated_fresh = _fetch_allocated_balances(user_id)
-    total_balance = allocated_fresh["salary"] + allocated_fresh["bills"] + allocated_fresh["emergency"]
-    if total_balance == 0:
-        total_balance = salary_snapshot + bills_snapshot + emergency_snapshot
+        # ── snapshots das caixas: fallback para balances alocados do banco ─
+        if (salary_snapshot or 0.0) == 0.0 and (bills_snapshot or 0.0) == 0.0 and (emergency_snapshot or 0.0) == 0.0:
+            allocated = _fetch_allocated_balances(user_id)
+            salary_snapshot    = allocated["salary"]
+            bills_snapshot     = allocated["bills"]
+            emergency_snapshot = allocated["emergency"]
+            if total_income == 0:
+                total_income = salary_snapshot + bills_snapshot + emergency_snapshot
 
-    # ── top_transactions: sempre força re-fetch do banco ──
-    fetched_txs = _fetch_top_transactions(user_id, reference_month)
-    if fetched_txs:
-        top_transactions = fetched_txs
-    # Fallback: transações do mês corrente (datas podem diferir do mês solicitado)
-    if not top_transactions:
-        top_transactions = _fetch_current_month_top_transactions(user_id)
-    # Fallback final: qualquer transação do usuário sem filtro de data
-    if not top_transactions:
-        top_transactions = _fetch_top_transactions_any(user_id)
+        # ── total_balance: soma das caixas do banco ────────────────────────
+        allocated_fresh = _fetch_allocated_balances(user_id)
+        total_balance = allocated_fresh["salary"] + allocated_fresh["bills"] + allocated_fresh["emergency"]
+        if total_balance == 0:
+            total_balance = salary_snapshot + bills_snapshot + emergency_snapshot
+
+        # ── top_transactions: re-fetch do banco como fallback ─────────────
+        fetched_txs = _fetch_top_transactions(user_id, reference_month)
+        if fetched_txs:
+            top_transactions = fetched_txs
+        if not top_transactions:
+            top_transactions = _fetch_current_month_top_transactions(user_id)
+        if not top_transactions:
+            top_transactions = _fetch_top_transactions_any(user_id)
 
     buf = io.BytesIO()
     c = pdf_canvas.Canvas(buf, pagesize=A4)

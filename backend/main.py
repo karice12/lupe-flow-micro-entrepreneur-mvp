@@ -876,6 +876,7 @@ def relatorio_mensal_pdf(
             emergency_goal=emergency_g,
             total_income=total_in,
             top_transactions=top_txs,
+            force_values=True,
         )
     except Exception as e:
         logger.error(f"PDF generation error for user '{user_id}': {e}", exc_info=True)
