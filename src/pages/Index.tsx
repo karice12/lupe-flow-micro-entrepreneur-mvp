@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { useDemo } from "@/contexts/DemoContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +42,7 @@ const CATEGORY_META: Record<string, { label: string; icon: React.ReactNode }> = 
 
 const Index = () => {
   const navigate = useNavigate();
+  const { isDemoMode } = useDemo();
   const { userId, isPremium, isAuthReady, setIsPremium, signOut } = useGoals();
 
   const {
@@ -94,11 +96,13 @@ const Index = () => {
 
   // ── Auth guard ──────────────────────────────────────────────────────────
   useEffect(() => {
+    if (isDemoMode) return;
     if (isAuthReady && !userId) navigate("/");
-  }, [isAuthReady, userId, navigate]);
+  }, [isAuthReady, userId, navigate, isDemoMode]);
 
   // ── LGPD gate — runs once per session when user is known ────────────────
   useEffect(() => {
+    if (isDemoMode) return;
     if (!isAuthReady || !userId || lgpdChecked.current) return;
     lgpdChecked.current = true;
     if (isLgpdAcceptedLocally(userId)) return;
@@ -119,7 +123,7 @@ const Index = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className={`min-h-screen bg-background flex flex-col${isDemoMode ? " pt-8" : ""}`}>
       <div className="flex-1 max-w-md mx-auto w-full px-4 py-6 space-y-5">
 
         {/* ── Header ─────────────────────────────────────────────────── */}

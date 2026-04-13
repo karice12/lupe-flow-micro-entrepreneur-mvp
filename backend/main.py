@@ -97,6 +97,8 @@ async def lifespan(application: FastAPI):
     logger.info("[Scheduler] APScheduler encerrado.")
 
 
+from backend.routes.demo import router as demo_router
+
 app = FastAPI(title="Lupe Flow API", lifespan=lifespan)
 
 _allowed_origins = [
@@ -120,6 +122,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(demo_router)
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────

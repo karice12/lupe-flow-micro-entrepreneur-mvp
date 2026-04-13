@@ -2,6 +2,11 @@ import { createClient, SupabaseClient, RealtimeChannel } from "@supabase/supabas
 
 let _client: SupabaseClient | null = null;
 let _initPromise: Promise<SupabaseClient | null> | null = null;
+let _demoToken: string | null = null;
+
+export function setDemoToken(token: string | null): void {
+  _demoToken = token;
+}
 
 async function initClient(): Promise<SupabaseClient | null> {
   let supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? "").trim().replace(/^["']|["']$/g, "");
@@ -46,6 +51,7 @@ export function getSupabaseClient(): Promise<SupabaseClient | null> {
 }
 
 export async function getAccessToken(): Promise<string | null> {
+  if (_demoToken) return _demoToken;
   const sb = await getSupabaseClient();
   if (!sb) return null;
   const { data } = await sb.auth.getSession();
