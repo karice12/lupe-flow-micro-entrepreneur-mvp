@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { getAccessToken } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useGoals } from "@/contexts/GoalsContext";
 import { LgpdFooter } from "@/components/LgpdFooter";
+import { LgpdModal, isLgpdAcceptedLocally, saveLgpdLocally } from "@/components/LgpdModal";
 import { PremiumModal } from "@/components/PremiumModal";
 import { PixSimulator } from "@/components/PixSimulator";
 import { BoxCard } from "@/components/BoxCard";
@@ -50,6 +51,8 @@ const Index = () => {
 
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [showLgpdGate, setShowLgpdGate] = useState(false);
+  const lgpdChecked = useRef(false);
 
   const totalBalance = boxes.reduce((s, b) => s + b.accumulated, 0);
 
@@ -93,6 +96,19 @@ const Index = () => {
   useEffect(() => {
     if (isAuthReady && !userId) navigate("/");
   }, [isAuthReady, userId, navigate]);
+
+  // ── LGPD gate — runs once per session when user is known ────────────────
+  useEffect(() => {
+    if (!isAuthReady || !userId || lgpdChecked.current) return;
+    lgpdChecked.current = true;
+    if (isLgpdAcceptedLocally(userId)) return;
+    fetch(`/api/usuario/${encodeURIComponent(userId)}`)
+      .then((r) => r.ok ? r.json() : Promise.reject())
+      .then((data) => {
+        if (!data.lgpd_accepted) setShowLgpdGate(true);
+      })
+      .catch(() => setShowLgpdGate(true));
+  }, [isAuthReady, userId]);
 
   const handleVerTudo = () => {
     if (!isPremium) {
@@ -339,6 +355,17 @@ const Index = () => {
         }}
         onClose={() => setShowPremiumModal(false)}
       />
+
+      {showLgpdGate && userId && (
+        <LgpdModal
+          open={true}
+          userId={userId}
+          onAccepted={() => {
+            saveLgpdLocally(userId);
+            setShowLgpdGate(false);
+          }}
+        />
+      )}
     </div>
   );
 };

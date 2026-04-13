@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGoals } from "@/contexts/GoalsContext";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Zap, Wallet, Receipt, ShieldCheck, ArrowRight, Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { LgpdFooter } from "@/components/LgpdFooter";
+import { LgpdModal, isLgpdAcceptedLocally, saveLgpdLocally } from "@/components/LgpdModal";
 import { getAccessToken } from "@/lib/supabase";
 
 const STEPS = [
@@ -37,6 +38,8 @@ const Onboarding = () => {
   const [step, setStep] = useState(0);
   const [values, setValues] = useState({ salary: "", bills: "", emergency: "" });
   const [isSaving, setIsSaving] = useState(false);
+  const [showLgpdGate, setShowLgpdGate] = useState(false);
+  const lgpdChecked = useRef(false);
   const navigate = useNavigate();
   const { userId, isAuthReady, setGoals } = useGoals();
 
@@ -45,6 +48,17 @@ const Onboarding = () => {
       navigate("/");
     }
   }, [isAuthReady, userId, navigate]);
+
+  // ── LGPD gate — runs once per session when user is known ────────────────
+  useEffect(() => {
+    if (!isAuthReady || !userId || lgpdChecked.current) return;
+    lgpdChecked.current = true;
+    if (isLgpdAcceptedLocally(userId)) return;
+    fetch(`/api/usuario/${encodeURIComponent(userId)}`)
+      .then((r) => r.ok ? r.json() : Promise.reject())
+      .then((data) => { if (!data.lgpd_accepted) setShowLgpdGate(true); })
+      .catch(() => setShowLgpdGate(true));
+  }, [isAuthReady, userId]);
 
   const current = STEPS[step];
   const isLast = step === STEPS.length - 1;
@@ -183,6 +197,17 @@ const Onboarding = () => {
       </div>
 
       <LgpdFooter />
+
+      {showLgpdGate && userId && (
+        <LgpdModal
+          open={true}
+          userId={userId}
+          onAccepted={() => {
+            saveLgpdLocally(userId);
+            setShowLgpdGate(false);
+          }}
+        />
+      )}
     </div>
   );
 };
