@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { Wallet, ShieldCheck, Receipt } from "lucide-react";
 import { toast } from "sonner";
 import { useGoals } from "@/contexts/GoalsContext";
-import { getSupabaseClient } from "@/lib/supabase";
+import { getSupabaseClient, getAccessToken } from "@/lib/supabase";
 import { DEMO_PIX_EVENT } from "@/lib/demoInterceptor";
 
 const formatCurrency = (v: number) =>
@@ -66,7 +66,10 @@ export function useUserStats() {
     });
 
     try {
-      const res = await fetch(`/api/saldos?${params}`);
+      const token = await getAccessToken();
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/saldos?${params}`, { headers });
       if (!res.ok) return;
       const data = await res.json().catch(() => null);
       if (data) {
@@ -86,7 +89,10 @@ export function useUserStats() {
   const fetchTransactions = useCallback(async (limit = 5) => {
     if (!userId) return;
     try {
-      const res = await fetch(`/api/transactions?user_id=${encodeURIComponent(userId)}&limit=${limit}`);
+      const token = await getAccessToken();
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/transactions?user_id=${encodeURIComponent(userId)}&limit=${limit}`, { headers });
       if (!res.ok) return;
       const data = await res.json().catch(() => null);
       setTransactions(data?.transactions || []);
@@ -117,11 +123,15 @@ export function useUserStats() {
       emergency_goal: String(emergencyGoal),
     });
 
-    Promise.allSettled([
-      fetch(`/api/saldos?${params}`),
-      fetch(`/api/transactions?user_id=${encodeURIComponent(userId)}&limit=5`),
-      fetch(`/api/usuario/${encodeURIComponent(userId)}`),
-    ]).then(async ([balRes, txRes, statRes]) => {
+    getAccessToken().then((token) => {
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      return Promise.allSettled([
+        fetch(`/api/saldos?${params}`, { headers }),
+        fetch(`/api/transactions?user_id=${encodeURIComponent(userId)}&limit=5`, { headers }),
+        fetch(`/api/usuario/${encodeURIComponent(userId)}`, { headers }),
+      ]);
+    }).then(async ([balRes, txRes, statRes]) => {
       if (balRes.status === "fulfilled" && balRes.value.ok) {
         const d = await balRes.value.json().catch(() => null);
         if (d) {
