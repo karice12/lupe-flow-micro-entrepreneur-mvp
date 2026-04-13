@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft, ArrowDownLeft, Wallet, ShieldCheck, Receipt, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useGoals } from "@/contexts/GoalsContext";
+import { getAccessToken } from "@/lib/supabase";
 import type { TxItem } from "@/hooks/useUserStats";
 
 const formatCurrency = (v: number) =>
@@ -46,10 +47,17 @@ const Transactions = () => {
     else setIsLoading(true);
 
     try {
-      const res = await fetch(`/api/transactions?user_id=${encodeURIComponent(userId)}&limit=50`);
+      const token = await getAccessToken();
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/transactions?user_id=${encodeURIComponent(userId)}&limit=50`, { headers });
       if (!res.ok) return;
       const data = await res.json();
-      setItems(data.transactions || []);
+      const txs: TxItem[] = data.transactions || [];
+      if (txs.length === 0) {
+        console.log("[Histórico] Lista vazia — user_id:", userId);
+      }
+      setItems(txs);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
