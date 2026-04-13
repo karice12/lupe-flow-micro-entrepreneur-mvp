@@ -549,18 +549,38 @@ async def stripe_webhook(request: Request):
         logger.warning(f"Stripe webhook signature invalid: {e}")
         raise HTTPException(status_code=400, detail="Assinatura do webhook inválida.")
 
-    event_type = event.get("type", "")
+    # StripeObject supports attribute access and bracket access but NOT .get() in all SDK versions.
+    # Use getattr() for safety throughout this handler.
+    event_type = getattr(event, "type", None) or ""
     logger.info(f"Stripe webhook received: type='{event_type}'")
 
+    def _str(val) -> str:
+        """Safely coerce a Stripe attribute value to a stripped string."""
+        return (str(val) if val is not None else "").strip()
+
+    def _meta(obj) -> dict:
+        """Return metadata as a plain dict regardless of StripeObject or dict."""
+        raw = getattr(obj, "metadata", None)
+        if raw is None:
+            return {}
+        if isinstance(raw, dict):
+            return raw
+        # StripeObject — iterate its keys
+        try:
+            return {k: raw[k] for k in raw}
+        except Exception:
+            return {}
+
     if event_type == "checkout.session.completed":
-        session        = event["data"]["object"]
-        payment_status = session.get("payment_status", "")
-        # "paid" = one-time or subscription first payment succeeded
-        # "no_payment_required" = free-trial or 100%-off coupon — still grant premium
+        session        = event.data.object
+        payment_status = _str(getattr(session, "payment_status", ""))
+        # "paid"               = one-time or subscription first payment succeeded
+        # "no_payment_required"= free-trial or 100%-off coupon — still grant premium
         payment_ok = payment_status in ("paid", "no_payment_required")
 
-        client_ref = (session.get("client_reference_id") or "").strip()
-        meta_uid   = ((session.get("metadata") or {}).get("user_id") or "").strip()
+        client_ref = _str(getattr(session, "client_reference_id", ""))
+        metadata   = _meta(session)
+        meta_uid   = (metadata.get("user_id") or "").strip()
         user_id    = client_ref or meta_uid
 
         logger.info(
@@ -571,11 +591,12 @@ async def stripe_webhook(request: Request):
         )
 
         if not user_id:
+            session_id = _str(getattr(session, "id", ""))
             logger.error(
-                "[Webhook] ERRO: user_id não encontrado no evento Stripe. "
-                f"session_id='{session.get('id')}' metadata={session.get('metadata')}"
+                f"[Webhook] ERRO: user_id não encontrado no evento Stripe. "
+                f"session_id='{session_id}' metadata={metadata}"
             )
-            print(f"ERRO SUPABASE: user_id ausente no evento Stripe — session={session.get('id')}", flush=True)
+            print(f"ERRO SUPABASE: user_id ausente no evento Stripe — session={session_id}", flush=True)
             return {"received": True}
 
         if not payment_ok:
@@ -585,7 +606,7 @@ async def stripe_webhook(request: Request):
             )
             return {"received": True}
 
-        plan_cycle = ((session.get("metadata") or {}).get("plan_cycle") or "monthly").strip()
+        plan_cycle = (metadata.get("plan_cycle") or "monthly").strip()
 
         # 1 — Activate premium
         try:
@@ -617,8 +638,9 @@ async def stripe_webhook(request: Request):
         logger.info(f"[Webhook] Premium ativado com sucesso — user='{user_id}' plan='{plan_cycle}'")
 
     elif event_type == "customer.subscription.deleted":
-        session = event["data"]["object"]
-        user_id = ((session.get("metadata") or {}).get("user_id") or "").strip()
+        session  = event.data.object
+        metadata = _meta(session)
+        user_id  = (metadata.get("user_id") or "").strip()
         logger.info(f"[Webhook] customer.subscription.deleted — user_id='{user_id}'")
         if user_id:
             try:
