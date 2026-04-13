@@ -73,6 +73,7 @@ externalPort = 8000
 SUPABASE_URL = "https://zdqlsuyxynupmutxxcij.supabase.co"
 VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpkcWxzdXl4eW51cG11dHh4Y2lqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2NjM0MDksImV4cCI6MjA5MTIzOTQwOX0.lSzoJehmAwnTXNWcsUi_S4EVMTgzdHh3xmNxwN_hss4"
 VITE_SUPABASE_URL = "https://zdqlsuyxynupmutxxcij.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpkcWxzdXl4eW51cG11dHh4Y2lqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2NjM0MDksImV4cCI6MjA5MTIzOTQwOX0.lSzoJehmAwnTXNWcsUi_S4EVMTgzdHh3xmNxwN_hss4"
 
 [userenv.production]
 FRONTEND_URL = "https://lupe-flow-micro-entrepreneur-mvp-1--KarolPelegrino.replit.app"
