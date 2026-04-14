@@ -14,6 +14,8 @@ import PaymentSuccess from "./pages/PaymentSuccess.tsx";
 import PaymentFailure from "./pages/PaymentFailure.tsx";
 import Demo from "./pages/Demo.tsx";
 import NotFound from "./pages/NotFound.tsx";
+import TermsOfUse from "./pages/legal/TermsOfUse.tsx";
+import PrivacyPolicy from "./pages/legal/PrivacyPolicy.tsx";
 
 const queryClient = new QueryClient();
 
@@ -34,6 +36,8 @@ const App = () => (
               <Route path="/transactions" element={<Transactions />} />
               <Route path="/pagamento-sucesso" element={<PaymentSuccess />} />
               <Route path="/pagamento-falha" element={<PaymentFailure />} />
+              <Route path="/termos" element={<TermsOfUse />} />
+              <Route path="/privacidade" element={<PrivacyPolicy />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>
