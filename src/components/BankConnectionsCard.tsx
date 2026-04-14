@@ -125,7 +125,7 @@ function loadPluggyScript(): Promise<void> {
 export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: BankConnectionsCardProps) {
   const [connections, setConnections] = useState<BankConnection[]>([]);
   const [billableUnits, setBillableUnits] = useState(0);
-  const [projectedFee, setProjectedFee] = useState<number | null>(null);
+  const [projectedFee, setProjectedFee] = useState<number>(29.90);
   const [isLoading, setIsLoading] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -147,7 +147,13 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
       }
       if (previewRes.status === "fulfilled" && previewRes.value.ok) {
         const preview = await previewRes.value.json().catch(() => null);
-        if (preview) setProjectedFee(preview.projected_monthly_fee);
+        setProjectedFee(
+          typeof preview?.projected_monthly_fee === "number"
+            ? preview.projected_monthly_fee
+            : 29.90,
+        );
+      } else {
+        setProjectedFee(29.90);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Erro ao carregar conexões.";
@@ -363,14 +369,12 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
                 </p>
               )}
 
-              {projectedFee !== null && (
-                <p className="text-[10px] text-muted-foreground/70 text-center">
-                  Valor da assinatura mensal:{" "}
-                  <span className="font-medium text-foreground/60">
-                    R$ {projectedFee.toFixed(2).replace(".", ",")}
-                  </span>
-                </p>
-              )}
+              <p className="text-[10px] text-muted-foreground/70 text-center">
+                Valor da assinatura mensal:{" "}
+                <span className="font-medium text-foreground/60">
+                  R$ {projectedFee.toFixed(2).replace(".", ",")}
+                </span>
+              </p>
 
               <p className="text-[10px] text-muted-foreground/60 text-center leading-relaxed">
                 1 banco incluso no plano · R$ 7,99/mês por banco adicional<br />
