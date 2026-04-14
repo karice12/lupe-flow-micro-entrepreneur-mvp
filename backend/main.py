@@ -15,6 +15,7 @@ from backend.models import (
     CheckoutSessionRequest, CheckoutSessionResponse,
     PluggyTokenResponse, PluggyWebhookPayload,
     MonthlyCloseResponse, MonthlyHistoryResponse, MonthlyHistoryItem,
+    BillingPreviewResponse,
 )
 from backend.storage import (
     get_balances, save_balances, get_user_status, upsert_goals, save_consent,
@@ -674,6 +675,24 @@ def calculate_monthly_fee(active_banks_count: int) -> float:
     if active_banks_count == 2:
         return 40.80
     raise ValueError(f"active_banks_count={active_banks_count} exceeds the maximum of 2.")
+
+
+@app.get("/billing/preview", response_model=BillingPreviewResponse)
+def billing_preview(
+    token_user_id: str = Depends(get_token_user_id),
+):
+    """
+    Returns the projected monthly fee for the authenticated user based on
+    the number of currently active bank connections.
+    No Stripe calls are made — this is a local pricing simulation only.
+    """
+    all_connections = list_bank_connections(token_user_id)
+    active_count = sum(1 for c in all_connections if c.get("status") == "active")
+    try:
+        fee = calculate_monthly_fee(active_count)
+    except ValueError:
+        fee = calculate_monthly_fee(2)
+    return BillingPreviewResponse(active_banks=active_count, projected_monthly_fee=fee)
 
 
 @app.get("/pluggy/token", response_model=PluggyTokenResponse)

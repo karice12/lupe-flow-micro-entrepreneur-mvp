@@ -187,3 +187,8 @@ class MonthlyHistoryItem(BaseModel):
 class MonthlyHistoryResponse(BaseModel):
     history: List[MonthlyHistoryItem]
     count: int
+
+
+class BillingPreviewResponse(BaseModel):
+    active_banks: int
+    projected_monthly_fee: float
