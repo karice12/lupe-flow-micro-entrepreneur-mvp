@@ -58,27 +58,32 @@ const Index = () => {
 
   const boxesTotal = boxes.reduce((s, b) => s + b.accumulated, 0);
   const [grandTotal, setGrandTotal] = useState<number | null>(null);
+  const [isSummaryLoading, setIsSummaryLoading] = useState(false);
 
-  const fetchGrandTotal = useCallback(async () => {
+  const fetchDashboardSummary = useCallback(async () => {
     if (!userId) return;
+    setIsSummaryLoading(true);
     try {
       const token = await getAccessToken();
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch("/api/balance/total", { headers });
+      const res = await fetch("/api/dashboard/summary", { headers });
       if (!res.ok) return;
       const data = await res.json().catch(() => null);
-      if (data) setGrandTotal(data.grand_total);
+      if (data) setGrandTotal(data.total_balance);
     } catch {
-      // fallback to boxesTotal
+      // fallback to boxesTotal silently
+    } finally {
+      setIsSummaryLoading(false);
     }
   }, [userId]);
 
   const totalBalance = grandTotal ?? boxesTotal;
+  const isBalanceLoading = isFetching || isSummaryLoading;
 
   useEffect(() => {
-    if (userId) fetchGrandTotal();
-  }, [userId, boxes, fetchGrandTotal]);
+    if (userId) fetchDashboardSummary();
+  }, [userId, boxes, fetchDashboardSummary]);
 
   const currentMonthParam = new Date().toISOString().slice(0, 7);
 
@@ -165,12 +170,10 @@ const Index = () => {
           <div className="flex items-center gap-3">
             <div className="text-right">
               <p className="text-xs text-muted-foreground">Saldo total</p>
-              <p className="text-lg font-bold text-foreground">
-                {isFetching
-                  ? <span className="text-muted-foreground text-sm animate-pulse">Carregando...</span>
-                  : formatCurrency(totalBalance)
-                }
-              </p>
+              {isBalanceLoading
+                ? <div className="h-6 w-28 rounded-md bg-muted animate-pulse mt-0.5" />
+                : <p className="text-lg font-bold text-foreground">{formatCurrency(totalBalance)}</p>
+              }
             </div>
             <button
               onClick={async () => { await signOut(); navigate("/"); }}

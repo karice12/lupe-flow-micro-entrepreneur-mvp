@@ -218,6 +218,27 @@ def save_balances(user_id: str, balance: BoxBalance) -> None:
         raise HTTPException(status_code=503, detail=f"Erro ao salvar saldos no banco: {e}")
 
 
+def reset_monthly_flow(user_id: str) -> None:
+    """
+    Zeroes the 'flow' category boxes (salary + bills) for a user at month turn.
+    The 'reserve' category (emergency) is intentionally left intact.
+
+    Category types:
+      flow    → salary, bills   (reset to 0 on month turn)
+      reserve → emergency       (preserved across months)
+    """
+    sb = get_supabase()
+    try:
+        sb.table("user_balances").update({
+            "salary": 0.0,
+            "bills":  0.0,
+        }).eq("user_id", user_id).execute()
+        logger.info(f"reset_monthly_flow: flow boxes zeroed for user='{user_id}'")
+    except Exception as e:
+        logger.error(f"reset_monthly_flow error for '{user_id}': {e}")
+        raise HTTPException(status_code=503, detail=f"Erro ao resetar caixas do mês: {e}")
+
+
 def is_transaction_processed(external_id: str) -> bool:
     """Return True if a transaction with this external_id already exists (idempotency guard)."""
     sb = get_supabase()

@@ -17,6 +17,7 @@ from backend.models import (
     MonthlyCloseResponse, MonthlyHistoryResponse, MonthlyHistoryItem,
     BillingPreviewResponse,
     BalanceTotalResponse,
+    DashboardSummaryResponse,
 )
 from backend.storage import (
     get_balances, save_balances, get_user_status, upsert_goals, save_consent,
@@ -25,6 +26,7 @@ from backend.storage import (
     save_monthly_summary, get_monthly_summary,
     get_top_transactions_for_month, get_total_income_for_month,
     get_all_premium_users, get_monthly_history,
+    reset_monthly_flow,
 )
 from backend.auth import get_token_user_id, assert_owns_resource
 from backend.stripe_billing import (
@@ -676,6 +678,34 @@ def calculate_monthly_fee(active_banks_count: int) -> float:
     if active_banks_count == 2:
         return 40.80
     raise ValueError(f"active_banks_count={active_banks_count} exceeds the maximum of 2.")
+
+
+@app.get("/dashboard/summary", response_model=DashboardSummaryResponse)
+def get_dashboard_summary(
+    token_user_id: str = Depends(get_token_user_id),
+):
+    """
+    Returns the combined balance for the Dashboard header:
+    - manual_boxes_balance: salary + bills + emergency from Supabase
+    - bank_balance: sum of all real account balances from active Pluggy connections
+    - total_balance: manual_boxes_balance + bank_balance
+    bank_balance is 0 if no banks are connected or Pluggy is unavailable.
+    """
+    balance = get_balances(token_user_id, {})
+    manual_boxes_balance = round(balance.salary + balance.bills + balance.emergency, 2)
+
+    connections = list_bank_connections(token_user_id)
+    provider_ids = [
+        c["provider_id"] for c in connections
+        if c.get("status") == "active" and c.get("provider_id")
+    ]
+    bank_balance = fetch_account_balances(provider_ids)
+
+    return DashboardSummaryResponse(
+        total_balance=round(manual_boxes_balance + bank_balance, 2),
+        bank_balance=bank_balance,
+        manual_boxes_balance=manual_boxes_balance,
+    )
 
 
 @app.get("/balance/total", response_model=BalanceTotalResponse)

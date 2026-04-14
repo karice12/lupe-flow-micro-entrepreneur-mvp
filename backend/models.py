@@ -198,3 +198,9 @@ class BalanceTotalResponse(BaseModel):
     boxes_total: float
     pluggy_total: float
     grand_total: float
+
+
+class DashboardSummaryResponse(BaseModel):
+    total_balance: float
+    bank_balance: float
+    manual_boxes_balance: float
