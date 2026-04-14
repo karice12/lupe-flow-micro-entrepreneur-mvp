@@ -125,6 +125,7 @@ function loadPluggyScript(): Promise<void> {
 export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: BankConnectionsCardProps) {
   const [connections, setConnections] = useState<BankConnection[]>([]);
   const [billableUnits, setBillableUnits] = useState(0);
+  const [projectedFee, setProjectedFee] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -134,9 +135,20 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
     if (!isPremium || !userId) return;
     setIsLoading(true);
     try {
-      const data = await fetchConnections(userId);
-      setConnections(data.connections);
-      setBillableUnits(data.billable_units);
+      const token = await getAccessToken();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const [data, previewRes] = await Promise.allSettled([
+        fetchConnections(userId),
+        fetch("/api/billing/preview", { headers }),
+      ]);
+      if (data.status === "fulfilled") {
+        setConnections(data.value.connections);
+        setBillableUnits(data.value.billable_units);
+      }
+      if (previewRes.status === "fulfilled" && previewRes.value.ok) {
+        const preview = await previewRes.value.json().catch(() => null);
+        if (preview) setProjectedFee(preview.projected_monthly_fee);
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Erro ao carregar conexões.";
       toast.error(msg);
@@ -348,6 +360,15 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
               {activeConnections.length >= 2 && (
                 <p className="text-[10px] text-destructive/80 text-center">
                   Limite de 2 bancos atingido para sua assinatura atual.
+                </p>
+              )}
+
+              {projectedFee !== null && (
+                <p className="text-[10px] text-muted-foreground/70 text-center">
+                  Valor da assinatura mensal:{" "}
+                  <span className="font-medium text-foreground/60">
+                    R$ {projectedFee.toFixed(2).replace(".", ",")}
+                  </span>
                 </p>
               )}
 
