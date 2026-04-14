@@ -661,6 +661,21 @@ async def stripe_webhook(request: Request):
 
 # ─── Pluggy Open Banking — Connect Token (JWT required) ───────────────────────
 
+def calculate_monthly_fee(active_banks_count: int) -> float:
+    """
+    Returns the monthly fee based on the number of active bank connections.
+    0 banks → R$ 0.00 | 1 bank → R$ 29.90 | 2 banks → R$ 40.80
+    Raises ValueError for counts above 2.
+    """
+    if active_banks_count == 0:
+        return 0.00
+    if active_banks_count == 1:
+        return 29.90
+    if active_banks_count == 2:
+        return 40.80
+    raise ValueError(f"active_banks_count={active_banks_count} exceeds the maximum of 2.")
+
+
 @app.get("/pluggy/token", response_model=PluggyTokenResponse)
 def get_pluggy_token(
     token_user_id: str = Depends(get_token_user_id),
@@ -670,6 +685,13 @@ def get_pluggy_token(
     The token is consumed by the Pluggy Widget on the frontend to link bank accounts.
     JWT must be valid — the authenticated user's UUID is sent as clientUserId to Pluggy.
     """
+    all_connections = list_bank_connections(token_user_id)
+    active_count = sum(1 for c in all_connections if c.get("status") == "active")
+    if active_count >= 2:
+        raise HTTPException(
+            status_code=403,
+            detail="Limite máximo de 2 conexões bancárias atingido.",
+        )
     connect_token = generate_connect_token(token_user_id)
     return PluggyTokenResponse(connect_token=connect_token)
 

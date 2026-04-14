@@ -337,13 +337,19 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
                 size="sm"
                 className="w-full h-9 rounded-lg text-xs gap-2 border-dashed border-amber-400/30 hover:border-amber-400/60 hover:bg-amber-400/5 hover:text-amber-400 transition-colors"
                 onClick={handleConnectBank}
-                disabled={isConnecting}
+                disabled={isConnecting || activeConnections.length >= 2}
               >
                 {isConnecting
                   ? <><Loader2 className="h-4 w-4 animate-spin" />Abrindo widget...</>
                   : <><Plus className="h-4 w-4" />Conectar novo banco</>
                 }
               </Button>
+
+              {activeConnections.length >= 2 && (
+                <p className="text-[10px] text-destructive/80 text-center">
+                  Limite de 2 bancos atingido para sua assinatura atual.
+                </p>
+              )}
 
               <p className="text-[10px] text-muted-foreground/60 text-center leading-relaxed">
                 1 banco incluso no plano · R$ 7,99/mês por banco adicional<br />
