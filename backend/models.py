@@ -192,3 +192,9 @@ class MonthlyHistoryResponse(BaseModel):
 class BillingPreviewResponse(BaseModel):
     active_banks: int
     projected_monthly_fee: float
+
+
+class BalanceTotalResponse(BaseModel):
+    boxes_total: float
+    pluggy_total: float
+    grand_total: float

@@ -16,6 +16,7 @@ from backend.models import (
     PluggyTokenResponse, PluggyWebhookPayload,
     MonthlyCloseResponse, MonthlyHistoryResponse, MonthlyHistoryItem,
     BillingPreviewResponse,
+    BalanceTotalResponse,
 )
 from backend.storage import (
     get_balances, save_balances, get_user_status, upsert_goals, save_consent,
@@ -29,7 +30,7 @@ from backend.auth import get_token_user_id, assert_owns_resource
 from backend.stripe_billing import (
     create_checkout_session, construct_webhook_event,
 )
-from backend.pluggy_service import generate_connect_token
+from backend.pluggy_service import generate_connect_token, fetch_account_balances
 
 load_dotenv()
 
@@ -675,6 +676,34 @@ def calculate_monthly_fee(active_banks_count: int) -> float:
     if active_banks_count == 2:
         return 40.80
     raise ValueError(f"active_banks_count={active_banks_count} exceeds the maximum of 2.")
+
+
+@app.get("/balance/total", response_model=BalanceTotalResponse)
+def get_balance_total(
+    token_user_id: str = Depends(get_token_user_id),
+):
+    """
+    Returns the combined balance:
+    - boxes_total: salary + bills + emergency from Supabase
+    - pluggy_total: sum of all Pluggy account balances for active connections
+    - grand_total: boxes_total + pluggy_total
+    If no banks are connected or Pluggy fails, pluggy_total = 0.
+    """
+    balance = get_balances(token_user_id, {})
+    boxes_total = round(balance.salary + balance.bills + balance.emergency, 2)
+
+    connections = list_bank_connections(token_user_id)
+    provider_ids = [
+        c["provider_id"] for c in connections
+        if c.get("status") == "active" and c.get("provider_id")
+    ]
+    pluggy_total = fetch_account_balances(provider_ids)
+
+    return BalanceTotalResponse(
+        boxes_total=boxes_total,
+        pluggy_total=pluggy_total,
+        grand_total=round(boxes_total + pluggy_total, 2),
+    )
 
 
 @app.get("/billing/preview", response_model=BillingPreviewResponse)

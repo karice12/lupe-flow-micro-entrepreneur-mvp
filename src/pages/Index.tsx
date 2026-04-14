@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDemo } from "@/contexts/DemoContext";
 import { Card, CardContent } from "@/components/ui/card";
@@ -56,7 +56,29 @@ const Index = () => {
   const [showLgpdGate, setShowLgpdGate] = useState(false);
   const lgpdChecked = useRef(false);
 
-  const totalBalance = boxes.reduce((s, b) => s + b.accumulated, 0);
+  const boxesTotal = boxes.reduce((s, b) => s + b.accumulated, 0);
+  const [grandTotal, setGrandTotal] = useState<number | null>(null);
+
+  const fetchGrandTotal = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const token = await getAccessToken();
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch("/api/balance/total", { headers });
+      if (!res.ok) return;
+      const data = await res.json().catch(() => null);
+      if (data) setGrandTotal(data.grand_total);
+    } catch {
+      // fallback to boxesTotal
+    }
+  }, [userId]);
+
+  const totalBalance = grandTotal ?? boxesTotal;
+
+  useEffect(() => {
+    if (userId) fetchGrandTotal();
+  }, [userId, boxes, fetchGrandTotal]);
 
   const currentMonthParam = new Date().toISOString().slice(0, 7);
 

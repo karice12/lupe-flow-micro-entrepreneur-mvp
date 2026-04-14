@@ -67,6 +67,37 @@ def _get_api_key(client_id: str, client_secret: str) -> str:
         raise HTTPException(status_code=502, detail=f"Erro ao autenticar com a Pluggy: {e}")
 
 
+def fetch_account_balances(provider_ids: list[str]) -> float:
+    """
+    For each Pluggy item ID, fetch all linked accounts and sum their balances.
+    Returns 0.0 if provider_ids is empty or on any error (non-fatal).
+    """
+    if not provider_ids:
+        return 0.0
+    try:
+        client_id, client_secret = _get_credentials()
+        api_key = _get_api_key(client_id, client_secret)
+    except Exception as e:
+        logger.warning(f"Pluggy auth failed during balance fetch: {e}")
+        return 0.0
+
+    total = 0.0
+    for item_id in provider_ids:
+        try:
+            res = httpx.get(
+                f"{PLUGGY_BASE_URL}/accounts",
+                headers={"X-API-KEY": api_key},
+                params={"itemId": item_id},
+                timeout=10.0,
+            )
+            res.raise_for_status()
+            for account in res.json().get("results", []):
+                total += float(account.get("balance", 0) or 0)
+        except Exception as e:
+            logger.warning(f"Could not fetch accounts for Pluggy item '{item_id}': {e}")
+    return round(total, 2)
+
+
 def generate_connect_token(user_id: str) -> str:
     """
     Generate a Pluggy Connect Token for the given user.
