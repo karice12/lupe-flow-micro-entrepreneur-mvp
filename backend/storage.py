@@ -397,8 +397,8 @@ def save_monthly_summary(
     total_income: float,
 ) -> dict:
     """
-    Upsert a monthly summary row and then zero out salary + bills balances.
-    Emergency balance is preserved.
+    Pure upsert of a monthly summary row into monthly_summaries.
+    Does NOT reset balances — call reset_monthly_flow separately after this.
     Returns the saved summary row.
     """
     sb = get_supabase()
@@ -418,14 +418,8 @@ def save_monthly_summary(
         if not res.data:
             raise ValueError("Upsert monthly_summaries returned no data.")
 
-        # Zero out salary + bills; keep emergency intact
-        sb.table("user_balances").update({
-            "salary": 0.0,
-            "bills":  0.0,
-        }).eq("user_id", user_id).execute()
-
         logger.info(
-            f"Monthly close done: user='{user_id}' month='{reference_month}' "
+            f"save_monthly_summary: snapshot persisted user='{user_id}' month='{reference_month}' "
             f"salary={salary_snapshot} bills={bills_snapshot} emergency={emergency_snapshot}"
         )
         return res.data[0]
@@ -434,6 +428,39 @@ def save_monthly_summary(
     except Exception as e:
         logger.error(f"save_monthly_summary error for '{user_id}': {e}")
         raise HTTPException(status_code=503, detail=f"Erro ao salvar fechamento mensal: {e}")
+
+
+def create_monthly_snapshot(user_id: str, reference_month: str) -> dict:
+    """
+    Reads the current live state of all boxes + total income for reference_month,
+    persists the snapshot to monthly_summaries, then resets the flow boxes
+    (salary + bills) to zero. Emergency is preserved.
+
+    Sequence: snapshot → persist → reset_monthly_flow.
+    Returns the saved monthly_summaries row.
+    """
+    balance     = get_balances(user_id, {})
+    total_income = get_total_income_for_month(user_id, reference_month)
+
+    row = save_monthly_summary(
+        user_id=user_id,
+        reference_month=reference_month,
+        salary_snapshot=balance.salary,
+        bills_snapshot=balance.bills,
+        emergency_snapshot=balance.emergency,
+        salary_goal=balance.salary_goal,
+        bills_goal=balance.bills_goal,
+        emergency_goal=balance.emergency_goal,
+        total_income=total_income,
+    )
+
+    reset_monthly_flow(user_id)
+
+    logger.info(
+        f"create_monthly_snapshot: complete for user='{user_id}' month='{reference_month}' "
+        f"total_income={total_income}"
+    )
+    return row
 
 
 def get_monthly_summary(user_id: str, reference_month: str) -> dict | None:

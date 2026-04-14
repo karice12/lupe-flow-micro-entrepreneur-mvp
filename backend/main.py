@@ -23,7 +23,7 @@ from backend.storage import (
     get_balances, save_balances, get_user_status, upsert_goals, save_consent,
     is_transaction_processed, log_transaction, get_recent_transactions, set_premium,
     list_bank_connections, add_bank_connection, deactivate_bank_connection, count_billable_units,
-    save_monthly_summary, get_monthly_summary,
+    save_monthly_summary, get_monthly_summary, create_monthly_snapshot,
     get_top_transactions_for_month, get_total_income_for_month,
     get_all_premium_users, get_monthly_history,
     reset_monthly_flow,
@@ -44,8 +44,10 @@ logger = logging.getLogger(__name__)
 
 async def _run_monthly_close_all_users():
     """
-    Job executado às 00:05 do dia 01 de cada mês (UTC).
-    Fecha o mês anterior para todos os usuários premium.
+    Job executado às 00:00 do dia 01 de cada mês (UTC).
+    Para cada usuário premium:
+      1. create_monthly_snapshot — lê saldos + transações e persiste em monthly_summaries.
+      2. reset_monthly_flow     — zera Salário e Contas (Reserva intacta).
     """
     now = datetime.now(timezone.utc)
     first_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -62,26 +64,16 @@ async def _run_monthly_close_all_users():
 
     logger.info(f"[Scheduler] Usuários premium encontrados: {len(user_ids)}")
 
+    ok = 0
     for uid in user_ids:
         try:
-            balance    = get_balances(uid, {})
-            total_in   = get_total_income_for_month(uid, reference_month)
-            save_monthly_summary(
-                user_id=uid,
-                reference_month=reference_month,
-                salary_snapshot=balance.salary,
-                bills_snapshot=balance.bills,
-                emergency_snapshot=balance.emergency,
-                salary_goal=balance.salary_goal,
-                bills_goal=balance.bills_goal,
-                emergency_goal=balance.emergency_goal,
-                total_income=total_in,
-            )
-            logger.info(f"[Scheduler] Fechamento OK: user='{uid}' mês='{reference_month}'")
+            create_monthly_snapshot(uid, reference_month)
+            ok += 1
+            logger.info(f"[Scheduler] Snapshot + reset OK: user='{uid}' mês='{reference_month}'")
         except Exception as e:
             logger.error(f"[Scheduler] Erro ao fechar mês para user='{uid}': {e}")
 
-    logger.info(f"[Scheduler] Fechamento automático concluído: {len(user_ids)} usuário(s).")
+    logger.info(f"[Scheduler] Fechamento automático concluído: {ok}/{len(user_ids)} usuário(s).")
 
 
 @asynccontextmanager
@@ -89,13 +81,13 @@ async def lifespan(application: FastAPI):
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(
         _run_monthly_close_all_users,
-        CronTrigger(day=1, hour=0, minute=5, timezone="UTC"),
+        CronTrigger(day=1, hour=0, minute=0, timezone="UTC"),
         id="monthly_close",
         name="Fechamento Mensal Automático",
         replace_existing=True,
     )
     scheduler.start()
-    logger.info("[Scheduler] APScheduler iniciado — fechamento automático no dia 01/mês às 00:05 UTC.")
+    logger.info("[Scheduler] APScheduler iniciado — fechamento automático no dia 01/mês às 00:00 UTC.")
     yield
     scheduler.shutdown(wait=False)
     logger.info("[Scheduler] APScheduler encerrado.")
@@ -867,20 +859,7 @@ def fechar_mes(
         last_month = first_of_month - timedelta(days=1)
         month = last_month.strftime("%Y-%m")
 
-    balance = get_balances(user_id, {})
-    total_income = get_total_income_for_month(user_id, month)
-
-    row = save_monthly_summary(
-        user_id=user_id,
-        reference_month=month,
-        salary_snapshot=balance.salary,
-        bills_snapshot=balance.bills,
-        emergency_snapshot=balance.emergency,
-        salary_goal=balance.salary_goal,
-        bills_goal=balance.bills_goal,
-        emergency_goal=balance.emergency_goal,
-        total_income=total_income,
-    )
+    row = create_monthly_snapshot(user_id, month)
 
     return MonthlyCloseResponse(
         message=f"Fechamento de {month} realizado com sucesso.",

@@ -85,9 +85,17 @@ const Index = () => {
     if (userId) fetchDashboardSummary();
   }, [userId, boxes, fetchDashboardSummary]);
 
-  const currentMonthParam = new Date().toISOString().slice(0, 7);
+  const _now = new Date();
 
-  const currentMonthLabel = new Date().toLocaleString("pt-BR", { month: "long", year: "numeric" });
+  // On the 1st of the month the scheduler has already closed the previous month.
+  // Point the report at the closed snapshot; every other day use the live month.
+  const reportMonthDate =
+    _now.getDate() === 1
+      ? new Date(_now.getFullYear(), _now.getMonth() - 1, 1)
+      : _now;
+
+  const reportMonthParam = reportMonthDate.toISOString().slice(0, 7);
+  const reportMonthLabel = reportMonthDate.toLocaleString("pt-BR", { month: "long", year: "numeric" });
 
   const handleDownloadRelatorio = async () => {
     if (!isPremium) { setShowPremiumModal(true); return; }
@@ -96,7 +104,7 @@ const Index = () => {
       const token = await getAccessToken();
       if (!token) throw new Error("Sessão expirada.");
       const res = await fetch(
-        `/api/usuario/${encodeURIComponent(userId)}/relatorio/mensal?month=${currentMonthParam}`,
+        `/api/usuario/${encodeURIComponent(userId)}/relatorio/mensal?month=${reportMonthParam}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (!res.ok) {
@@ -107,7 +115,7 @@ const Index = () => {
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement("a");
       a.href     = url;
-      a.download = `lupeflow-relatorio-${currentMonthParam}.pdf`;
+      a.download = `lupeflow-relatorio-${reportMonthParam}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -358,7 +366,7 @@ const Index = () => {
             </div>
             <div className="text-left min-w-0">
               <p className="text-sm font-semibold text-foreground">
-                {isDownloadingPdf ? "Gerando PDF..." : `Baixar Relatório — ${currentMonthLabel}`}
+                {isDownloadingPdf ? "Gerando PDF..." : `Baixar Relatório — ${reportMonthLabel}`}
               </p>
               <p className="text-xs text-muted-foreground truncate">
                 {isPremium
