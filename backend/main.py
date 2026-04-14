@@ -78,16 +78,16 @@ async def _run_monthly_close_all_users():
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    scheduler = AsyncIOScheduler(timezone="UTC")
+    scheduler = AsyncIOScheduler(timezone="America/Sao_Paulo")
     scheduler.add_job(
         _run_monthly_close_all_users,
-        CronTrigger(day=1, hour=0, minute=0, timezone="UTC"),
+        CronTrigger(day=1, hour=0, minute=0, timezone="America/Sao_Paulo"),
         id="monthly_close",
         name="Fechamento Mensal Automático",
         replace_existing=True,
     )
     scheduler.start()
-    logger.info("[Scheduler] APScheduler iniciado — fechamento automático no dia 01/mês às 00:00 UTC.")
+    logger.info("[Scheduler] APScheduler iniciado — fechamento automático no dia 01/mês às 00:00 America/Sao_Paulo.")
     yield
     scheduler.shutdown(wait=False)
     logger.info("[Scheduler] APScheduler encerrado.")
