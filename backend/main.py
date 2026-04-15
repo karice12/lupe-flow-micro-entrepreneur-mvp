@@ -26,11 +26,12 @@ from backend.storage import (
     save_monthly_summary, get_monthly_summary, create_monthly_snapshot,
     get_top_transactions_for_month, get_total_income_for_month,
     get_all_premium_users, get_monthly_history,
-    reset_monthly_flow,
+    reset_monthly_flow, get_extra_bank_flag, set_extra_bank,
 )
 from backend.auth import get_token_user_id, assert_owns_resource
 from backend.stripe_billing import (
     create_checkout_session, construct_webhook_event,
+    create_extra_bank_checkout_session, retrieve_checkout_session,
 )
 from backend.pluggy_service import generate_connect_token, fetch_account_balances
 
@@ -511,6 +512,43 @@ def dividir_pix(
 
 # ─── Stripe Checkout (write — JWT required) ───────────────────────────────────
 
+@app.get("/checkout/verify-session")
+def verify_checkout_session(
+    session_id: str = Query(...),
+    token_user_id: str = Depends(get_token_user_id),
+):
+    """
+    Validates a Stripe Checkout Session by ID.
+    Ensures the session belongs to the authenticated user before confirming payment.
+    Prevents premium activation via direct URL manipulation.
+    """
+    try:
+        session = retrieve_checkout_session(session_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Sessão inválida ou não encontrada: {e}")
+
+    client_ref = (str(getattr(session, "client_reference_id", "") or "")).strip()
+    raw_meta   = getattr(session, "metadata", None)
+    metadata: dict = {}
+    if raw_meta:
+        metadata = dict(raw_meta) if isinstance(raw_meta, dict) else {k: raw_meta[k] for k in raw_meta}
+
+    session_user_id = client_ref or (metadata.get("user_id") or "").strip()
+    if session_user_id != token_user_id:
+        raise HTTPException(status_code=403, detail="Sessão não pertence ao usuário autenticado.")
+
+    payment_status = str(getattr(session, "payment_status", "") or "").strip()
+    plan_type      = (metadata.get("plan_type") or "premium").strip()
+
+    return {
+        "session_id":     session_id,
+        "payment_status": payment_status,
+        "plan_type":      plan_type,
+        "user_id":        session_user_id,
+        "verified":       payment_status in ("paid", "no_payment_required"),
+    }
+
+
 @app.post("/checkout/create-session", response_model=CheckoutSessionResponse)
 def create_stripe_session(
     req: CheckoutSessionRequest,
@@ -621,33 +659,43 @@ async def stripe_webhook(request: Request):
             return {"received": True}
 
         plan_cycle = (metadata.get("plan_cycle") or "monthly").strip()
+        plan_type  = (metadata.get("plan_type")  or "premium").strip()
 
-        # 1 — Activate premium
-        try:
-            set_premium(user_id, True)
-            logger.info(f"[Webhook] set_premium(True) OK — user='{user_id}'")
-        except Exception as e:
-            logger.error(f"[Webhook] set_premium FALHOU para '{user_id}': {e}", exc_info=True)
-            raise HTTPException(status_code=500, detail="Erro ao ativar premium.")
+        if plan_type == "extra_bank":
+            # Add-on: grant access to 2nd bank connection
+            try:
+                set_extra_bank(user_id, True)
+                logger.info(f"[Webhook] set_extra_bank(True) OK — user='{user_id}'")
+            except Exception as e:
+                logger.error(f"[Webhook] set_extra_bank FALHOU para '{user_id}': {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail="Erro ao ativar add-on extra_bank.")
+        else:
+            # 1 — Activate premium
+            try:
+                set_premium(user_id, True)
+                logger.info(f"[Webhook] set_premium(True) OK — user='{user_id}'")
+            except Exception as e:
+                logger.error(f"[Webhook] set_premium FALHOU para '{user_id}': {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail="Erro ao ativar premium.")
 
-        # 2 — Persist plan_cycle (non-fatal)
-        try:
-            from backend.storage import get_supabase
-            sb = get_supabase()
-            res = (
-                sb.table("user_balances")
-                  .update({"plan_cycle": plan_cycle})
-                  .eq("user_id", user_id)
-                  .execute()
-            )
-            logger.info(
-                f"[Webhook] plan_cycle='{plan_cycle}' persistido — "
-                f"user='{user_id}' rows_affected={len(res.data or [])}"
-            )
-        except Exception as sb_e:
-            logger.warning(f"[Webhook] Falha ao persistir plan_cycle para '{user_id}': {sb_e}")
+            # 2 — Persist plan_cycle (non-fatal)
+            try:
+                from backend.storage import get_supabase
+                sb = get_supabase()
+                res = (
+                    sb.table("user_balances")
+                      .update({"plan_cycle": plan_cycle})
+                      .eq("user_id", user_id)
+                      .execute()
+                )
+                logger.info(
+                    f"[Webhook] plan_cycle='{plan_cycle}' persistido — "
+                    f"user='{user_id}' rows_affected={len(res.data or [])}"
+                )
+            except Exception as sb_e:
+                logger.warning(f"[Webhook] Falha ao persistir plan_cycle para '{user_id}': {sb_e}")
 
-        logger.info(f"[Webhook] Premium ativado com sucesso — user='{user_id}' plan='{plan_cycle}'")
+        logger.info(f"[Webhook] Checkout processado — user='{user_id}' plan_type='{plan_type}' plan='{plan_cycle}'")
 
     elif event_type == "customer.subscription.deleted":
         session  = event.data.object
@@ -777,16 +825,35 @@ def get_pluggy_token(
 ):
     """
     Generate a Pluggy Connect Token for the authenticated user.
-    The token is consumed by the Pluggy Widget on the frontend to link bank accounts.
-    JWT must be valid — the authenticated user's UUID is sent as clientUserId to Pluggy.
+    - 1st bank: requires is_premium only.
+    - 2nd bank: requires is_premium AND extra_bank add-on (R$ 7,99).
+    - 3rd+ bank: blocked unconditionally.
     """
     all_connections = list_bank_connections(token_user_id)
     active_count = sum(1 for c in all_connections if c.get("status") == "active")
+
     if active_count >= 2:
-        raise HTTPException(
-            status_code=403,
-            detail="Limite máximo de 2 conexões bancárias atingido.",
-        )
+        raise HTTPException(status_code=403, detail="Limite máximo de 2 conexões bancárias atingido.")
+
+    if active_count >= 1:
+        status = get_user_status(token_user_id)
+        is_premium = status.get("is_premium", False)
+        has_extra_bank = get_extra_bank_flag(token_user_id)
+        if not is_premium or not has_extra_bank:
+            checkout_url: str | None = None
+            try:
+                plan_cycle = status.get("plan_cycle") or "monthly"
+                checkout_url = create_extra_bank_checkout_session(token_user_id, plan_cycle)
+            except Exception as exc:
+                logger.error(f"Failed to create extra_bank checkout for '{token_user_id}': {exc}")
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "message": "O segundo banco requer o add-on Banco Adicional (R$ 7,99/mês).",
+                    "checkout_url": checkout_url,
+                },
+            )
+
     connect_token = generate_connect_token(token_user_id)
     return PluggyTokenResponse(connect_token=connect_token)
 
@@ -803,8 +870,8 @@ async def pluggy_webhook(payload: PluggyWebhookPayload):
     event = payload.event or ""
     logger.info(f"Pluggy webhook received: event='{event}' itemId='{payload.itemId}'")
 
-    if event != "transactions/created":
-        logger.info(f"Pluggy webhook ignored: event='{event}' is not 'transactions/created'")
+    if event not in ("transactions/created", "transactions/updated", "transactions.updates"):
+        logger.info(f"Pluggy webhook ignored: event='{event}'")
         return {"received": True, "processed": 0}
 
     data = payload.data

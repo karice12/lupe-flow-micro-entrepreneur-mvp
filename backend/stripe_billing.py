@@ -27,10 +27,13 @@ EXTRA_BANK_YEARLY_CENTS  = int(round(EXTRA_BANK_MONTHLY_CENTS * 12 * (1 - YEARLY
 
 def _get_stripe_client() -> None:
     """Configure the Stripe SDK with the secret key from the environment."""
-    key = os.getenv("STRIPE_SECRET_KEY", "").strip()
+    key = (
+        os.getenv("STRIPE_API_KEY", "").strip()
+        or os.getenv("STRIPE_SECRET_KEY", "").strip()
+    )
     if not key:
         raise ValueError(
-            "STRIPE_SECRET_KEY não configurada. "
+            "STRIPE_API_KEY não configurada. "
             "Adicione-a como secret no painel do Replit."
         )
     stripe.api_key = key
@@ -153,6 +156,60 @@ def create_checkout_session(
         f"extra_banks={extra_banks} session_id='{session.id}'"
     )
     return session.url
+
+
+def create_extra_bank_checkout_session(user_id: str, plan_cycle: str) -> str:
+    """Create a Stripe Checkout Session for the Banco Adicional add-on (R$ 7,99)."""
+    _get_stripe_client()
+
+    base_url  = _get_frontend_url()
+    is_yearly = plan_cycle == "yearly"
+    extra_cents = EXTRA_BANK_YEARLY_CENTS if is_yearly else EXTRA_BANK_MONTHLY_CENTS
+    label = f"Lupe Flow — Banco Adicional ({'Anual' if is_yearly else 'Mensal'})"
+
+    price_data: dict = {
+        "currency":     "brl",
+        "unit_amount":  extra_cents,
+        "product_data": {"name": label},
+    }
+    if not is_yearly:
+        price_data["recurring"] = {"interval": "month"}
+
+    session_metadata = {
+        "user_id":    user_id,
+        "plan_cycle": plan_cycle,
+        "plan_type":  "extra_bank",
+    }
+
+    mode = "payment" if is_yearly else "subscription"
+
+    create_kwargs: dict = {
+        "payment_method_types": ["card"],
+        "line_items":           [{"price_data": price_data, "quantity": 1}],
+        "mode":                 mode,
+        "success_url":          f"{base_url}/pagamento-sucesso?session_id={{CHECKOUT_SESSION_ID}}",
+        "cancel_url":           f"{base_url}/pagamento-falha",
+        "client_reference_id":  user_id,
+        "metadata":             session_metadata,
+    }
+
+    if is_yearly:
+        create_kwargs["payment_intent_data"] = {"metadata": session_metadata}
+    else:
+        create_kwargs["subscription_data"] = {"metadata": session_metadata}
+
+    session = stripe.checkout.Session.create(**create_kwargs)
+    logger.info(
+        f"Stripe extra_bank session created: user='{user_id}' "
+        f"plan='{plan_cycle}' session_id='{session.id}'"
+    )
+    return session.url
+
+
+def retrieve_checkout_session(session_id: str):
+    """Retrieve and return a Stripe Checkout Session by ID."""
+    _get_stripe_client()
+    return stripe.checkout.Session.retrieve(session_id)
 
 
 def construct_webhook_event(payload: bytes, sig_header: str) -> dict:

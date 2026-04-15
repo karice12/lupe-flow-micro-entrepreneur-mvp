@@ -121,7 +121,6 @@ def set_premium(user_id: str, value: bool) -> None:
             f"key_type={_key_type} error_type={type(e).__name__} detail={e}",
             exc_info=True,
         )
-        print(f"ERRO SUPABASE: set_premium FAILED — user={user_id} key_type={_key_type} erro={e}", flush=True)
         raise HTTPException(
             status_code=503,
             detail=f"Erro ao atualizar assinatura: [{type(e).__name__}] {e}",
@@ -595,6 +594,40 @@ def get_all_premium_users() -> list[str]:
     except Exception as e:
         logger.error(f"get_all_premium_users error: {e}")
         return []
+
+
+def get_extra_bank_flag(user_id: str) -> bool:
+    """Return True if the user has paid for the extra_bank add-on."""
+    sb = get_supabase()
+    try:
+        res = sb.table("user_balances").select("extra_bank").eq("user_id", user_id).limit(1).execute()
+        if res.data:
+            return bool(res.data[0].get("extra_bank", False))
+        return False
+    except Exception as e:
+        logger.warning(f"get_extra_bank_flag error for '{user_id}': {e}")
+        return False
+
+
+def set_extra_bank(user_id: str, value: bool) -> None:
+    """Set the extra_bank flag for a user (add-on for 2nd bank connection)."""
+    sb = get_supabase()
+    try:
+        check = sb.table("user_balances").select("user_id").eq("user_id", user_id).limit(1).execute()
+        if check.data:
+            sb.table("user_balances").update({"extra_bank": value}).eq("user_id", user_id).execute()
+        else:
+            sb.table("user_balances").insert({
+                "user_id": user_id, "extra_bank": value,
+                "is_premium": False, "plan_cycle": "monthly",
+                "salary": 0, "bills": 0, "emergency": 0,
+                "salary_goal": 0, "bills_goal": 0, "emergency_goal": 0,
+                "lgpd_accepted": False,
+            }).execute()
+        logger.info(f"set_extra_bank OK — user='{user_id}' value={value}")
+    except Exception as e:
+        logger.error(f"set_extra_bank FAILED — user='{user_id}': {e}", exc_info=True)
+        raise HTTPException(status_code=503, detail=f"Erro ao atualizar flag extra_bank: {e}")
 
 
 def count_billable_units(user_id: str) -> int:

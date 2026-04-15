@@ -1,3 +1,16 @@
+# Env files
+.env
+.env.local
+.env.*.local
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
 # Logs
 logs
 *.log
