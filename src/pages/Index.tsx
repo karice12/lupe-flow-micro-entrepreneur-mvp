@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useDemo } from "@/contexts/DemoContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,7 @@ const CATEGORY_META: Record<string, { label: string; icon: React.ReactNode }> = 
 
 const Index = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { isDemoMode } = useDemo();
   const { userId, isPremium, isAuthReady, setIsPremium, signOut } = useGoals();
 
@@ -55,6 +56,7 @@ const Index = () => {
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [showLgpdGate, setShowLgpdGate] = useState(false);
+  const [bankRefreshKey, setBankRefreshKey] = useState(0);
   const lgpdChecked = useRef(false);
 
   const boxesTotal = boxes.reduce((s, b) => s + b.accumulated, 0);
@@ -156,6 +158,15 @@ const Index = () => {
       })
       .catch(() => setShowLgpdGate(true));
   }, [isAuthReady, userId]);
+
+  // ── Detect return from extra-bank Stripe checkout ───────────────────────
+  useEffect(() => {
+    if (searchParams.get("extra_bank") !== "success") return;
+    navigate("/dashboard", { replace: true });
+    setBankRefreshKey((k) => k + 1);
+    fetchBalances(true);
+    fetchTransactions();
+  }, [searchParams, navigate, fetchBalances, fetchTransactions]);
 
   const handleVerTudo = () => {
     if (!isPremium) {
@@ -272,6 +283,7 @@ const Index = () => {
 
         {/* ── Bank Connections ────────────────────────────────────────── */}
         <BankConnectionsCard
+          key={bankRefreshKey}
           userId={userId}
           isPremium={isPremium}
           onRequestPremium={() => setShowPremiumModal(true)}

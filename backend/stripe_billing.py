@@ -187,8 +187,8 @@ def create_extra_bank_checkout_session(user_id: str, plan_cycle: str) -> str:
         "payment_method_types": ["card"],
         "line_items":           [{"price_data": price_data, "quantity": 1}],
         "mode":                 mode,
-        "success_url":          f"{base_url}/pagamento-sucesso?session_id={{CHECKOUT_SESSION_ID}}",
-        "cancel_url":           f"{base_url}/pagamento-falha",
+        "success_url":          f"{base_url}/dashboard?extra_bank=success&session_id={{CHECKOUT_SESSION_ID}}",
+        "cancel_url":           f"{base_url}/dashboard?extra_bank=cancelled",
         "client_reference_id":  user_id,
         "metadata":             session_metadata,
     }
