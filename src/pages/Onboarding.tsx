@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { extractApiError } from "@/lib/apiError";
 import { useNavigate } from "react-router-dom";
 import { useGoals } from "@/contexts/GoalsContext";
 import { Button } from "@/components/ui/button";
@@ -98,7 +99,7 @@ const Onboarding = () => {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || "Erro ao salvar metas.");
+        throw new Error(extractApiError(err, "Erro ao salvar metas."));
       }
 
       setGoals({ salary: salaryGoal, bills: billsGoal, emergency: emergencyGoal });

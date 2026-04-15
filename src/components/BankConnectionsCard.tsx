@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Building2, Plus, Trash2, Loader2, Lock, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/supabase";
+import { extractApiError } from "@/lib/apiError";
 
 declare global {
   interface Window {
@@ -51,8 +52,8 @@ async function fetchConnections(userId: string): Promise<{ connections: BankConn
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Erro ao carregar conexões.");
+    const body = await res.json().catch(() => ({}));
+    throw new Error(extractApiError(body, "Erro ao carregar conexões."));
   }
   return res.json();
 }
@@ -65,8 +66,8 @@ async function deactivateConnection(userId: string, connectionId: string): Promi
     { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
   );
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Erro ao remover conexão.");
+    const body = await res.json().catch(() => ({}));
+    throw new Error(extractApiError(body, "Erro ao remover conexão."));
   }
 }
 
@@ -77,8 +78,8 @@ async function fetchPluggyToken(): Promise<string> {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Erro ao obter token da Pluggy.");
+    const body = await res.json().catch(() => ({}));
+    throw new Error(extractApiError(body, "Erro ao obter token da Pluggy."));
   }
   const data = await res.json();
   return data.connect_token;
@@ -96,8 +97,8 @@ async function savePluggyConnection(userId: string, bankName: string, providerId
     body: JSON.stringify({ bank_name: bankName, provider_id: providerId }),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Erro ao salvar conexão.");
+    const body = await res.json().catch(() => ({}));
+    throw new Error(extractApiError(body, "Erro ao salvar conexão."));
   }
 }
 

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Zap, Check, Loader2, Star, AlertCircle, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/supabase";
+import { extractApiError } from "@/lib/apiError";
 
 interface PremiumModalProps {
   open: boolean;
@@ -70,7 +71,7 @@ export function PremiumModal({ open, userId, onActivated, onClose }: PremiumModa
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail || `Erro HTTP ${res.status}`);
+        throw new Error(extractApiError(body, `Erro HTTP ${res.status}`));
       }
 
       const { checkout_url } = await res.json();

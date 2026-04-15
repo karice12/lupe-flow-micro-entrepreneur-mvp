@@ -9,6 +9,7 @@ import {
   FileDown, Loader2,
 } from "lucide-react";
 import { getAccessToken } from "@/lib/supabase";
+import { extractApiError } from "@/lib/apiError";
 import { toast } from "sonner";
 import { useGoals } from "@/contexts/GoalsContext";
 import { LgpdFooter } from "@/components/LgpdFooter";
@@ -109,7 +110,7 @@ const Index = () => {
       );
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || "Erro ao gerar relatório.");
+        throw new Error(extractApiError(err, "Erro ao gerar relatório."));
       }
       const blob = await res.blob();
       const url  = URL.createObjectURL(blob);
@@ -141,8 +142,15 @@ const Index = () => {
     if (!isAuthReady || !userId || lgpdChecked.current) return;
     lgpdChecked.current = true;
     if (isLgpdAcceptedLocally(userId)) return;
-    fetch(`/api/usuario/${encodeURIComponent(userId)}`)
-      .then((r) => r.ok ? r.json() : Promise.reject())
+    getAccessToken().then((token) => {
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      return fetch(`/api/usuario/${encodeURIComponent(userId)}`, { headers });
+    })
+      .then((r) => {
+        if (r.status === 401) throw new Error("Sessão expirada");
+        return r.ok ? r.json() : Promise.reject();
+      })
       .then((data) => {
         if (!data.lgpd_accepted) setShowLgpdGate(true);
       })

@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { ArrowDownLeft, Loader2, BadgeCheck, Star } from "lucide-react";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/supabase";
+import { extractApiError } from "@/lib/apiError";
 
 interface PixEntryCardProps {
   userId: string;
@@ -51,7 +52,7 @@ export function PixSimulator({ userId, isPremium, onRequestPremium, onSuccess }:
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        toast.error(err.detail || "Erro ao registrar entrada.");
+        toast.error(extractApiError(err, "Erro ao registrar entrada."));
         return;
       }
       const data = await res.json().catch(() => ({ allocated_salary: 0, allocated_bills: 0, allocated_emergency: 0 }));
