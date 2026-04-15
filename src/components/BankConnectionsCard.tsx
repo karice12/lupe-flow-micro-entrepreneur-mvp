@@ -34,7 +34,6 @@ interface BankConnectionsCardProps {
   onRequestPremium: () => void;
 }
 
-const EXTRA_BANK_COST = 7.99;
 const PLUGGY_SCRIPT_URL = "https://cdn.pluggy.ai/pluggy-connect/v2.8.2/pluggy-connect.js";
 
 const formatDate = (iso: string) => {
@@ -79,10 +78,6 @@ async function fetchPluggyToken(): Promise<string> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    const detail = body?.detail;
-    if (detail && typeof detail === "object" && detail.checkout_url) {
-      throw new Error("__extra_bank__");
-    }
     throw new Error(extractApiError(body, "Erro ao obter token da Pluggy."));
   }
   const data = await res.json();
@@ -118,10 +113,7 @@ function loadPluggyScript(): Promise<void> {
     const script = document.createElement("script");
     script.src = PLUGGY_SCRIPT_URL;
     script.async = true;
-    script.onload = () => {
-      console.log("Pluggy Script carregado com sucesso");
-      resolve();
-    };
+    script.onload = () => resolve();
     script.onerror = () => reject(new Error("Falha ao carregar o widget Pluggy."));
     document.head.appendChild(script);
   });
@@ -129,58 +121,17 @@ function loadPluggyScript(): Promise<void> {
 
 export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: BankConnectionsCardProps) {
   const [connections, setConnections] = useState<BankConnection[]>([]);
-  const [billableUnits, setBillableUnits] = useState(0);
-  const [projectedFee, setProjectedFee] = useState<number>(29.90);
   const [isLoading, setIsLoading] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [showAddonPrompt, setShowAddonPrompt] = useState(false);
-  const [addonLoading, setAddonLoading] = useState<"monthly" | "yearly" | null>(null);
   const widgetRef = useRef<{ init: () => void } | null>(null);
-
-  const handleExtraBankCheckout = async (plan_cycle: "monthly" | "yearly") => {
-    setAddonLoading(plan_cycle);
-    try {
-      const token = await getAccessToken();
-      if (!token) throw new Error("Sessão expirada.");
-      const res = await fetch(`/api/checkout/extra-bank?plan_cycle=${plan_cycle}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(extractApiError(body, "Erro ao iniciar pagamento."));
-      if (body.checkout_url) window.location.href = body.checkout_url;
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Erro ao iniciar pagamento.";
-      toast.error(msg);
-    } finally {
-      setAddonLoading(null);
-    }
-  };
 
   const loadConnections = useCallback(async () => {
     if (!isPremium || !userId) return;
     setIsLoading(true);
     try {
-      const token = await getAccessToken();
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const [data, previewRes] = await Promise.allSettled([
-        fetchConnections(userId),
-        fetch("/api/billing/preview", { headers }),
-      ]);
-      if (data.status === "fulfilled") {
-        setConnections(data.value.connections);
-        setBillableUnits(data.value.billable_units);
-      }
-      if (previewRes.status === "fulfilled" && previewRes.value.ok) {
-        const preview = await previewRes.value.json().catch(() => null);
-        setProjectedFee(
-          typeof preview?.projected_monthly_fee === "number"
-            ? preview.projected_monthly_fee
-            : 29.90,
-        );
-      } else {
-        setProjectedFee(29.90);
-      }
+      const data = await fetchConnections(userId);
+      setConnections(data.connections);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Erro ao carregar conexões.";
       toast.error(msg);
@@ -212,7 +163,6 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
     try {
       await loadPluggyScript();
       const connectToken = await fetchPluggyToken();
-      console.log("Pluggy connect token recebido:", connectToken ? `${connectToken.slice(0, 20)}...` : "VAZIO");
 
       widgetRef.current = new window.PluggyConnect({
         connectToken,
@@ -239,11 +189,7 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
       widgetRef.current.init();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Erro ao abrir o widget.";
-      if (msg === "__extra_bank__") {
-        setShowAddonPrompt(true);
-      } else {
-        toast.error(msg);
-      }
+      toast.error(msg);
       setIsConnecting(false);
     }
   };
@@ -255,13 +201,8 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Conexões Bancárias
+          Conexão Bancária
         </p>
-        {isPremium && billableUnits > 0 && (
-          <span className="text-xs text-amber-400 font-medium">
-            +R$ {(billableUnits * EXTRA_BANK_COST).toFixed(2).replace(".", ",")}/mês
-          </span>
-        )}
       </div>
 
       <Card className="border-border bg-card">
@@ -286,7 +227,7 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
                 className="h-8 px-4 rounded-lg text-xs"
                 onClick={onRequestPremium}
               >
-                Ativar Premium — R$ 29,90/mês
+                Ativar Premium — R$ 39,90/mês
               </Button>
             </div>
           )}
@@ -295,15 +236,13 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
           {isPremium && (
             <div className="space-y-3">
 
-              {/* Loading skeleton */}
               {isLoading && (
                 <div className="flex items-center justify-center py-4 gap-2 text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  <span className="text-sm">Carregando conexões...</span>
+                  <span className="text-sm">Carregando conexão...</span>
                 </div>
               )}
 
-              {/* Empty state */}
               {!isLoading && activeConnections.length === 0 && (
                 <div className="flex flex-col items-center gap-2 py-2 text-center">
                   <Building2 className="h-8 w-8 text-muted-foreground/50" />
@@ -311,8 +250,8 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
                 </div>
               )}
 
-              {/* Active connections */}
-              {!isLoading && activeConnections.map((conn, idx) => (
+              {/* Active connection */}
+              {!isLoading && activeConnections.map((conn) => (
                 <div
                   key={conn.id}
                   className="flex items-center justify-between rounded-lg border border-border bg-background p-3 gap-3"
@@ -330,16 +269,9 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    {idx > 0 && (
-                      <span className="text-[10px] font-bold text-amber-400 bg-amber-400/10 border border-amber-400/20 px-1.5 py-0.5 rounded-full">
-                        +R$ 7,99
-                      </span>
-                    )}
-                    {idx === 0 && (
-                      <span className="text-[10px] font-bold text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded-full">
-                        incluso
-                      </span>
-                    )}
+                    <span className="text-[10px] font-bold text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded-full">
+                      incluso
+                    </span>
                     <button
                       onClick={() => handleRemove(conn.id, conn.bank_name)}
                       disabled={removingId === conn.id}
@@ -360,7 +292,7 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
               {!isLoading && inactiveConnections.length > 0 && (
                 <div className="space-y-1.5">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-                    Desativados este mês (contam na cobrança)
+                    Desativados
                   </p>
                   {inactiveConnections.map((conn) => (
                     <div
@@ -379,72 +311,24 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
                 </div>
               )}
 
-              {/* Extra-bank add-on prompt */}
-              {showAddonPrompt && (
-                <div className="rounded-lg border border-amber-400/30 bg-amber-400/5 p-3 space-y-2">
-                  <p className="text-xs font-semibold text-amber-400">Banco Adicional necessário</p>
-                  <p className="text-xs text-muted-foreground">Para conectar o 2º banco, assine o add-on:</p>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="flex-1 h-8 text-xs border-amber-400/40 hover:bg-amber-400/10 hover:text-amber-400"
-                      disabled={addonLoading !== null}
-                      onClick={() => handleExtraBankCheckout("monthly")}
-                    >
-                      {addonLoading === "monthly" ? <Loader2 className="h-3 w-3 animate-spin" /> : "Mensal R$ 7,99/mês"}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="flex-1 h-8 text-xs border-amber-400/40 hover:bg-amber-400/10 hover:text-amber-400"
-                      disabled={addonLoading !== null}
-                      onClick={() => handleExtraBankCheckout("yearly")}
-                    >
-                      {addonLoading === "yearly" ? <Loader2 className="h-3 w-3 animate-spin" /> : "Anual R$ 95,88/ano"}
-                    </Button>
-                  </div>
-                  <button
-                    className="text-[10px] text-muted-foreground/60 hover:text-muted-foreground w-full text-center"
-                    onClick={() => setShowAddonPrompt(false)}
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              )}
-
-              {/* Connect bank button — Pluggy Widget */}
-              {!showAddonPrompt && (
+              {/* Connect bank button */}
+              {activeConnections.length < 1 && (
                 <Button
                   variant="outline"
                   size="sm"
                   className="w-full h-9 rounded-lg text-xs gap-2 border-dashed border-amber-400/30 hover:border-amber-400/60 hover:bg-amber-400/5 hover:text-amber-400 transition-colors"
                   onClick={handleConnectBank}
-                  disabled={isConnecting || activeConnections.length >= 2}
+                  disabled={isConnecting}
                 >
                   {isConnecting
                     ? <><Loader2 className="h-4 w-4 animate-spin" />Abrindo widget...</>
-                    : <><Plus className="h-4 w-4" />Conectar novo banco</>
+                    : <><Plus className="h-4 w-4" />Conectar banco</>
                   }
                 </Button>
               )}
 
-              {activeConnections.length >= 2 && (
-                <p className="text-[10px] text-destructive/80 text-center">
-                  Limite de 2 bancos atingido para sua assinatura atual.
-                </p>
-              )}
-
-              <p className="text-[10px] text-muted-foreground/70 text-center">
-                Valor da assinatura mensal:{" "}
-                <span className="font-medium text-foreground/60">
-                  R$ {projectedFee.toFixed(2).replace(".", ",")}
-                </span>
-              </p>
-
               <p className="text-[10px] text-muted-foreground/60 text-center leading-relaxed">
-                1 banco incluso no plano · R$ 7,99/mês por banco adicional<br />
-                Bancos desativados no mês corrente são cobrados proporcionalmente.
+                1 conexão bancária inclusa no plano
               </p>
             </div>
           )}

@@ -21,11 +21,9 @@ interface PremiumModalProps {
 
 type PlanCycle = "monthly" | "yearly";
 
-const YEARLY_DISCOUNT = 0.07;
-const BASE_MONTHLY    = 29.9;
-const EXTRA_MONTHLY   = 7.99;
+const BASE_MONTHLY    = 39.9;
+const BASE_YEARLY_TOTAL = 445.30;
 
-/** Format a BRL value as "R$ X,XX" */
 const fmt = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -35,6 +33,7 @@ const FEATURES = [
   "Histórico completo de transações",
   "Atualizações em tempo real",
   "Relatórios financeiros mensais",
+  "1 conexão bancária inclusa",
 ];
 
 export function PremiumModal({ open, userId, onActivated, onClose }: PremiumModalProps) {
@@ -42,17 +41,9 @@ export function PremiumModal({ open, userId, onActivated, onClose }: PremiumModa
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [planCycle, setPlanCycle] = useState<PlanCycle>("monthly");
 
-  const monthlyPrice = BASE_MONTHLY;
-  const yearlyMonthly = BASE_MONTHLY * 12 * (1 - YEARLY_DISCOUNT) / 12;
-  const displayPrice  = planCycle === "yearly" ? yearlyMonthly : monthlyPrice;
-  const annualTotal   = BASE_MONTHLY * 12 * (1 - YEARLY_DISCOUNT);
-  const annualExtraTotal = EXTRA_MONTHLY * 12 * (1 - YEARLY_DISCOUNT);
+  const yearlyMonthly = BASE_YEARLY_TOTAL / 12;
+  const displayPrice  = planCycle === "yearly" ? yearlyMonthly : BASE_MONTHLY;
 
-  /**
-   * Calls the backend to create a Stripe Checkout Session,
-   * then redirects the browser to the Stripe-hosted payment page.
-   * The backend automatically calculates extra billable bank connections.
-   */
   const handleCheckout = async () => {
     setIsLoading(true);
     setInlineError(null);
@@ -154,16 +145,12 @@ export function PremiumModal({ open, userId, onActivated, onClose }: PremiumModa
           </div>
           {planCycle === "yearly" && (
             <p className="text-xs text-muted-foreground">
-              Cobrado {fmt(annualTotal)} por ano · {fmt(monthlyPrice)}/mês sem desconto
+              Cobrado {fmt(BASE_YEARLY_TOTAL)} por ano · {fmt(BASE_MONTHLY)}/mês sem desconto
             </p>
           )}
           {planCycle === "monthly" && (
             <p className="text-xs text-muted-foreground">Cancele quando quiser</p>
           )}
-          <p className="text-[10px] text-muted-foreground/60 pt-1">
-            +{fmt(planCycle === "yearly" ? annualExtraTotal : EXTRA_MONTHLY)}
-            {planCycle === "yearly" ? "/ano" : "/mês"} por banco adicional além do 1º
-          </p>
         </div>
 
         {/* ── Features ──────────────────────────────────────────────── */}

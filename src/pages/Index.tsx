@@ -56,7 +56,6 @@ const Index = () => {
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [showLgpdGate, setShowLgpdGate] = useState(false);
-  const [bankRefreshKey, setBankRefreshKey] = useState(0);
   const lgpdChecked = useRef(false);
 
   const boxesTotal = boxes.reduce((s, b) => s + b.accumulated, 0);
@@ -159,15 +158,6 @@ const Index = () => {
       .catch(() => setShowLgpdGate(true));
   }, [isAuthReady, userId]);
 
-  // ── Detect return from extra-bank Stripe checkout ───────────────────────
-  useEffect(() => {
-    if (searchParams.get("extra_bank") !== "success") return;
-    navigate("/dashboard", { replace: true });
-    setBankRefreshKey((k) => k + 1);
-    fetchBalances(true);
-    fetchTransactions();
-  }, [searchParams, navigate, fetchBalances, fetchTransactions]);
-
   const handleVerTudo = () => {
     if (!isPremium) {
       setShowPremiumModal(true);
@@ -221,7 +211,7 @@ const Index = () => {
                 <Star className="h-4 w-4 text-primary shrink-0" />
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-foreground">Ative o Lupe Flow Premium</p>
-                  <p className="text-xs text-muted-foreground truncate">Lançamentos reais, histórico e realtime por R$ 29,90/mês</p>
+                  <p className="text-xs text-muted-foreground truncate">Lançamentos reais, histórico e realtime por R$ 39,90/mês</p>
                 </div>
               </div>
               <Button
@@ -283,7 +273,6 @@ const Index = () => {
 
         {/* ── Bank Connections ────────────────────────────────────────── */}
         <BankConnectionsCard
-          key={bankRefreshKey}
           userId={userId}
           isPremium={isPremium}
           onRequestPremium={() => setShowPremiumModal(true)}

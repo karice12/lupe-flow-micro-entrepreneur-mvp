@@ -15,23 +15,22 @@ from backend.models import (
     CheckoutSessionRequest, CheckoutSessionResponse,
     PluggyTokenResponse, PluggyWebhookPayload,
     MonthlyCloseResponse, MonthlyHistoryResponse, MonthlyHistoryItem,
-    BillingPreviewResponse,
+
     BalanceTotalResponse,
     DashboardSummaryResponse,
 )
 from backend.storage import (
     get_balances, save_balances, get_user_status, upsert_goals, save_consent,
     is_transaction_processed, log_transaction, get_recent_transactions, set_premium,
-    list_bank_connections, add_bank_connection, deactivate_bank_connection, count_billable_units,
+    list_bank_connections, add_bank_connection, deactivate_bank_connection,
     save_monthly_summary, get_monthly_summary, create_monthly_snapshot,
     get_top_transactions_for_month, get_total_income_for_month,
     get_all_premium_users, get_monthly_history,
-    reset_monthly_flow, get_extra_bank_flag, set_extra_bank,
+    reset_monthly_flow,
 )
 from backend.auth import get_token_user_id, assert_owns_resource
 from backend.stripe_billing import (
-    create_checkout_session, construct_webhook_event,
-    create_extra_bank_checkout_session, retrieve_checkout_session,
+    create_checkout_session, construct_webhook_event, retrieve_checkout_session,
 )
 from backend.pluggy_service import generate_connect_token, fetch_account_balances
 
@@ -391,8 +390,7 @@ def get_banks(
         )
         for r in rows
     ]
-    extra = count_billable_units(user_id)
-    return BankConnectionListResponse(connections=connections, billable_units=extra)
+    return BankConnectionListResponse(connections=connections, billable_units=0)
 
 
 @app.post("/usuario/{user_id}/banks", response_model=BankConnection)
@@ -567,31 +565,14 @@ def create_stripe_session(
             detail="plan_cycle deve ser 'monthly' ou 'yearly'.",
         )
 
-    extra_banks = count_billable_units(req.user_id)
-
     try:
-        checkout_url = create_checkout_session(req.user_id, req.plan_cycle, extra_banks)
+        checkout_url = create_checkout_session(req.user_id, req.plan_cycle)
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.error(f"Stripe session error for user '{req.user_id}': {e}", exc_info=True)
         raise HTTPException(status_code=503, detail=f"Erro ao criar sessão de pagamento: {e}")
 
-    return CheckoutSessionResponse(checkout_url=checkout_url)
-
-
-@app.get("/checkout/extra-bank", response_model=CheckoutSessionResponse)
-def create_extra_bank_session(
-    plan_cycle: str = Query(default="monthly"),
-    token_user_id: str = Depends(get_token_user_id),
-):
-    if plan_cycle not in ("monthly", "yearly"):
-        raise HTTPException(status_code=422, detail="plan_cycle deve ser 'monthly' ou 'yearly'.")
-    try:
-        checkout_url = create_extra_bank_checkout_session(token_user_id, plan_cycle)
-    except Exception as e:
-        logger.error(f"Extra-bank session error for user '{token_user_id}': {e}", exc_info=True)
-        raise HTTPException(status_code=503, detail=f"Erro ao criar sessão de add-on: {e}")
     return CheckoutSessionResponse(checkout_url=checkout_url)
 
 
@@ -674,43 +655,33 @@ async def stripe_webhook(request: Request):
             return {"received": True}
 
         plan_cycle = (metadata.get("plan_cycle") or "monthly").strip()
-        plan_type  = (metadata.get("plan_type")  or "premium").strip()
 
-        if plan_type == "extra_bank":
-            # Add-on: grant access to 2nd bank connection
-            try:
-                set_extra_bank(user_id, True)
-                logger.info(f"[Webhook] set_extra_bank(True) OK — user='{user_id}'")
-            except Exception as e:
-                logger.error(f"[Webhook] set_extra_bank FALHOU para '{user_id}': {e}", exc_info=True)
-                raise HTTPException(status_code=500, detail="Erro ao ativar add-on extra_bank.")
-        else:
-            # 1 — Activate premium
-            try:
-                set_premium(user_id, True)
-                logger.info(f"[Webhook] set_premium(True) OK — user='{user_id}'")
-            except Exception as e:
-                logger.error(f"[Webhook] set_premium FALHOU para '{user_id}': {e}", exc_info=True)
-                raise HTTPException(status_code=500, detail="Erro ao ativar premium.")
+        # Activate premium
+        try:
+            set_premium(user_id, True)
+            logger.info(f"[Webhook] set_premium(True) OK — user='{user_id}'")
+        except Exception as e:
+            logger.error(f"[Webhook] set_premium FALHOU para '{user_id}': {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail="Erro ao ativar premium.")
 
-            # 2 — Persist plan_cycle (non-fatal)
-            try:
-                from backend.storage import get_supabase
-                sb = get_supabase()
-                res = (
-                    sb.table("user_balances")
-                      .update({"plan_cycle": plan_cycle})
-                      .eq("user_id", user_id)
-                      .execute()
-                )
-                logger.info(
-                    f"[Webhook] plan_cycle='{plan_cycle}' persistido — "
-                    f"user='{user_id}' rows_affected={len(res.data or [])}"
-                )
-            except Exception as sb_e:
-                logger.warning(f"[Webhook] Falha ao persistir plan_cycle para '{user_id}': {sb_e}")
+        # Persist plan_cycle (non-fatal)
+        try:
+            from backend.storage import get_supabase
+            sb = get_supabase()
+            res = (
+                sb.table("user_balances")
+                  .update({"plan_cycle": plan_cycle})
+                  .eq("user_id", user_id)
+                  .execute()
+            )
+            logger.info(
+                f"[Webhook] plan_cycle='{plan_cycle}' persistido — "
+                f"user='{user_id}' rows_affected={len(res.data or [])}"
+            )
+        except Exception as sb_e:
+            logger.warning(f"[Webhook] Falha ao persistir plan_cycle para '{user_id}': {sb_e}")
 
-        logger.info(f"[Webhook] Checkout processado — user='{user_id}' plan_type='{plan_type}' plan='{plan_cycle}'")
+        logger.info(f"[Webhook] Checkout processado — user='{user_id}' plan='{plan_cycle}'")
 
     elif event_type == "customer.subscription.deleted":
         session  = event.data.object
@@ -744,21 +715,6 @@ async def stripe_webhook(request: Request):
 
 
 # ─── Pluggy Open Banking — Connect Token (JWT required) ───────────────────────
-
-def calculate_monthly_fee(active_banks_count: int) -> float:
-    """
-    Returns the monthly fee based on the number of active bank connections.
-    0 banks → R$ 0.00 | 1 bank → R$ 29.90 | 2 banks → R$ 40.80
-    Raises ValueError for counts above 2.
-    """
-    if active_banks_count == 0:
-        return 0.00
-    if active_banks_count == 1:
-        return 29.90
-    if active_banks_count == 2:
-        return 40.80
-    raise ValueError(f"active_banks_count={active_banks_count} exceeds the maximum of 2.")
-
 
 @app.get("/dashboard/summary", response_model=DashboardSummaryResponse)
 def get_dashboard_summary(
@@ -816,58 +772,19 @@ def get_balance_total(
     )
 
 
-@app.get("/billing/preview", response_model=BillingPreviewResponse)
-def billing_preview(
-    token_user_id: str = Depends(get_token_user_id),
-):
-    """
-    Returns the projected monthly fee for the authenticated user based on
-    the number of currently active bank connections.
-    No Stripe calls are made — this is a local pricing simulation only.
-    """
-    all_connections = list_bank_connections(token_user_id)
-    active_count = sum(1 for c in all_connections if c.get("status") == "active")
-    try:
-        fee = calculate_monthly_fee(active_count)
-    except ValueError:
-        fee = calculate_monthly_fee(2)
-    return BillingPreviewResponse(active_banks=active_count, projected_monthly_fee=fee)
-
-
 @app.get("/pluggy/token", response_model=PluggyTokenResponse)
 def get_pluggy_token(
     token_user_id: str = Depends(get_token_user_id),
 ):
     """
     Generate a Pluggy Connect Token for the authenticated user.
-    - 1st bank: requires is_premium only.
-    - 2nd bank: requires is_premium AND extra_bank add-on (R$ 7,99).
-    - 3rd+ bank: blocked unconditionally.
+    Requires is_premium. Only 1 bank connection is allowed per plan.
     """
     all_connections = list_bank_connections(token_user_id)
     active_count = sum(1 for c in all_connections if c.get("status") == "active")
 
-    if active_count >= 2:
-        raise HTTPException(status_code=403, detail="Limite máximo de 2 conexões bancárias atingido.")
-
     if active_count >= 1:
-        status = get_user_status(token_user_id)
-        is_premium = status.get("is_premium", False)
-        has_extra_bank = get_extra_bank_flag(token_user_id)
-        if not is_premium or not has_extra_bank:
-            checkout_url: str | None = None
-            try:
-                plan_cycle = status.get("plan_cycle") or "monthly"
-                checkout_url = create_extra_bank_checkout_session(token_user_id, plan_cycle)
-            except Exception as exc:
-                logger.error(f"Failed to create extra_bank checkout for '{token_user_id}': {exc}")
-            raise HTTPException(
-                status_code=403,
-                detail={
-                    "message": "O segundo banco requer o add-on Banco Adicional (R$ 7,99/mês).",
-                    "checkout_url": checkout_url,
-                },
-            )
+        raise HTTPException(status_code=403, detail="Limite de 1 conexão bancária atingido.")
 
     connect_token = generate_connect_token(token_user_id)
     return PluggyTokenResponse(connect_token=connect_token)
