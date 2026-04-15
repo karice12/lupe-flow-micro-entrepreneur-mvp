@@ -133,6 +133,76 @@ def create_checkout_session(
     return session.url
 
 
+def create_extra_bank_checkout_session(
+    user_id: str,
+    plan_cycle: str,
+) -> str:
+    """
+    Create a Stripe Checkout Session for the extra bank connection add-on.
+
+    Pricing:
+      - monthly: R$ 7,99 (799 centavos)
+      - yearly:  R$ 89,90 (8990 centavos, one-time payment)
+
+    Args:
+        user_id:    Supabase user UUID.
+        plan_cycle: 'monthly' or 'yearly'.
+
+    Returns:
+        The Stripe Checkout Session URL.
+    """
+    _get_stripe_client()
+
+    base_url  = _get_frontend_url()
+    is_yearly = plan_cycle == "yearly"
+
+    amount_cents = 8990 if is_yearly else 799
+    label = (
+        "Lupe Flow — Banco Adicional (Anual)"
+        if is_yearly else
+        "Lupe Flow — Banco Adicional (Mensal)"
+    )
+
+    pd: dict = {
+        "currency":     "brl",
+        "unit_amount":  amount_cents,
+        "product_data": {"name": label},
+    }
+    if not is_yearly:
+        pd["recurring"] = {"interval": "month"}
+
+    mode = "payment" if is_yearly else "subscription"
+
+    session_metadata = {
+        "user_id":       user_id,
+        "plan_cycle":    plan_cycle,
+        "extra_bank":    "true",
+    }
+
+    create_kwargs: dict = {
+        "payment_method_types": ["card"],
+        "line_items":           [{"price_data": pd, "quantity": 1}],
+        "mode":                 mode,
+        "success_url":          f"{base_url}/pagamento-sucesso?session_id={{CHECKOUT_SESSION_ID}}",
+        "cancel_url":           f"{base_url}/pagamento-falha",
+        "client_reference_id":  user_id,
+        "metadata":             session_metadata,
+    }
+
+    if is_yearly:
+        create_kwargs["payment_intent_data"] = {"metadata": session_metadata}
+    else:
+        create_kwargs["subscription_data"] = {"metadata": session_metadata}
+
+    session = stripe.checkout.Session.create(**create_kwargs)
+
+    logger.info(
+        f"Extra-bank Stripe session created: user='{user_id}' plan='{plan_cycle}' "
+        f"session_id='{session.id}'"
+    )
+    return session.url
+
+
 def retrieve_checkout_session(session_id: str):
     """Retrieve and return a Stripe Checkout Session by ID."""
     _get_stripe_client()
