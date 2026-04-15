@@ -175,10 +175,14 @@ def supabase_config():
     }
 
 
-# ─── User (read-only — no JWT required) ──────────────────────────────────────
+# ─── User (read — JWT required) ──────────────────────────────────────────────
 
 @app.get("/usuario/{user_id}", response_model=UserStatusResponse)
-def check_usuario(user_id: str):
+def check_usuario(
+    user_id: str,
+    token_user_id: str = Depends(get_token_user_id),
+):
+    assert_owns_resource(token_user_id, user_id)
     status = get_user_status(user_id)
     return UserStatusResponse(**status)
 
@@ -298,11 +302,22 @@ def get_transactions(
 # ─── Webhook — Open Finance entry point (server-to-server, no user JWT) ───────
 
 @app.post("/v1/webhook/pix", response_model=WebhookPixResponse)
-def webhook_pix(req: WebhookPixRequest, user_id: str = Query(default="usuario_teste")):
+def webhook_pix(req: WebhookPixRequest, request: Request):
     """
-    Simulates what Pluggy / Belvo / Open Finance would POST when a PIX is received.
-    Server-to-server call — authenticated via Supabase service role on the backend side.
+    Receives PIX webhook events from Open Finance providers.
+    Validates the shared secret header before processing.
+    user_id must be in the request body — not in query params.
     """
+    webhook_secret = os.getenv("WEBHOOK_PIX_SECRET", "").strip()
+    if webhook_secret:
+        incoming = request.headers.get("X-Webhook-Secret", "").strip()
+        if not incoming or incoming != webhook_secret:
+            raise HTTPException(status_code=401, detail="Webhook secret inválido.")
+
+    user_id = req.user_id.strip()
+    if not user_id:
+        raise HTTPException(status_code=422, detail="user_id é obrigatório no corpo da requisição.")
+
     if req.valor <= 0:
         raise HTTPException(status_code=422, detail="O valor do Pix deve ser maior que zero.")
 
@@ -596,7 +611,6 @@ async def stripe_webhook(request: Request):
                 f"[Webhook] ERRO: user_id não encontrado no evento Stripe. "
                 f"session_id='{session_id}' metadata={metadata}"
             )
-            print(f"ERRO SUPABASE: user_id ausente no evento Stripe — session={session_id}", flush=True)
             return {"received": True}
 
         if not payment_ok:
@@ -614,7 +628,6 @@ async def stripe_webhook(request: Request):
             logger.info(f"[Webhook] set_premium(True) OK — user='{user_id}'")
         except Exception as e:
             logger.error(f"[Webhook] set_premium FALHOU para '{user_id}': {e}", exc_info=True)
-            print(f"ERRO SUPABASE: set_premium falhou — user={user_id} erro={e}", flush=True)
             raise HTTPException(status_code=500, detail="Erro ao ativar premium.")
 
         # 2 — Persist plan_cycle (non-fatal)
@@ -633,7 +646,6 @@ async def stripe_webhook(request: Request):
             )
         except Exception as sb_e:
             logger.warning(f"[Webhook] Falha ao persistir plan_cycle para '{user_id}': {sb_e}")
-            print(f"ERRO SUPABASE: plan_cycle update falhou — user={user_id} erro={sb_e}", flush=True)
 
         logger.info(f"[Webhook] Premium ativado com sucesso — user='{user_id}' plan='{plan_cycle}'")
 
@@ -648,9 +660,22 @@ async def stripe_webhook(request: Request):
                 logger.info(f"[Webhook] Premium cancelado — user='{user_id}'")
             except Exception as e:
                 logger.error(f"[Webhook] Falha ao cancelar premium para '{user_id}': {e}", exc_info=True)
-                print(f"ERRO SUPABASE: cancelar premium falhou — user={user_id} erro={e}", flush=True)
         else:
             logger.warning("[Webhook] customer.subscription.deleted sem user_id no metadata.")
+
+    elif event_type == "invoice.payment_failed":
+        invoice  = event.data.object
+        metadata = _meta(invoice)
+        user_id  = (metadata.get("user_id") or "").strip()
+        logger.info(f"[Webhook] invoice.payment_failed — user_id='{user_id}'")
+        if user_id:
+            try:
+                set_premium(user_id, False)
+                logger.info(f"[Webhook] Premium desativado por inadimplência — user='{user_id}'")
+            except Exception as e:
+                logger.error(f"[Webhook] Falha ao desativar premium por inadimplência para '{user_id}': {e}", exc_info=True)
+        else:
+            logger.warning("[Webhook] invoice.payment_failed sem user_id no metadata.")
 
     return {"received": True}
 

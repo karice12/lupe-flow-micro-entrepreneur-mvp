@@ -56,14 +56,12 @@ def _get_api_key(client_id: str, client_secret: str) -> str:
             f"ERRO DETALHADO PLUGGY /auth: status={e.response.status_code} "
             f"body={e.response.text}"
         )
-        print(f"ERRO DETALHADO PLUGGY: {e.response.text}", flush=True)
         raise HTTPException(
             status_code=502,
             detail=f"Falha na autenticação com a Pluggy: {e.response.status_code} — {e.response.text}",
         )
     except Exception as e:
         logger.error(f"Pluggy auth error: {type(e).__name__}: {e}")
-        print(f"ERRO DETALHADO PLUGGY: {type(e).__name__}: {e}", flush=True)
         raise HTTPException(status_code=502, detail=f"Erro ao autenticar com a Pluggy: {e}")
 
 
@@ -134,12 +132,10 @@ def generate_connect_token(user_id: str) -> str:
             f"ERRO DETALHADO PLUGGY /connect_token: status={e.response.status_code} "
             f"body={e.response.text}"
         )
-        print(f"ERRO DETALHADO PLUGGY: {e.response.text}", flush=True)
         raise HTTPException(
             status_code=502,
             detail=f"Falha ao gerar Connect Token da Pluggy: {e.response.status_code} — {e.response.text}",
         )
     except Exception as e:
         logger.error(f"Pluggy connect_token error: {type(e).__name__}: {e}")
-        print(f"ERRO DETALHADO PLUGGY: {type(e).__name__}: {e}", flush=True)
         raise HTTPException(status_code=502, detail=f"Erro ao gerar Connect Token: {e}")

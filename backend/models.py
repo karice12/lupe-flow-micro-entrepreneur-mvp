@@ -54,6 +54,7 @@ class WebhookPixRequest(BaseModel):
     valor: float
     descricao: str
     id_transacao_bancaria: str
+    user_id: str
 
 
 class WebhookPixResponse(BaseModel):
