@@ -580,6 +580,21 @@ def create_stripe_session(
     return CheckoutSessionResponse(checkout_url=checkout_url)
 
 
+@app.get("/checkout/extra-bank", response_model=CheckoutSessionResponse)
+def create_extra_bank_session(
+    plan_cycle: str = Query(default="monthly"),
+    token_user_id: str = Depends(get_token_user_id),
+):
+    if plan_cycle not in ("monthly", "yearly"):
+        raise HTTPException(status_code=422, detail="plan_cycle deve ser 'monthly' ou 'yearly'.")
+    try:
+        checkout_url = create_extra_bank_checkout_session(token_user_id, plan_cycle)
+    except Exception as e:
+        logger.error(f"Extra-bank session error for user '{token_user_id}': {e}", exc_info=True)
+        raise HTTPException(status_code=503, detail=f"Erro ao criar sessão de add-on: {e}")
+    return CheckoutSessionResponse(checkout_url=checkout_url)
+
+
 # ─── Stripe Webhook (server-to-server — no user JWT) ─────────────────────────
 
 @app.post("/webhook/stripe")

@@ -79,6 +79,10 @@ async function fetchPluggyToken(): Promise<string> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    const detail = body?.detail;
+    if (detail && typeof detail === "object" && detail.checkout_url) {
+      throw new Error("__extra_bank__");
+    }
     throw new Error(extractApiError(body, "Erro ao obter token da Pluggy."));
   }
   const data = await res.json();
@@ -130,7 +134,28 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
   const [isLoading, setIsLoading] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [showAddonPrompt, setShowAddonPrompt] = useState(false);
+  const [addonLoading, setAddonLoading] = useState<"monthly" | "yearly" | null>(null);
   const widgetRef = useRef<{ init: () => void } | null>(null);
+
+  const handleExtraBankCheckout = async (plan_cycle: "monthly" | "yearly") => {
+    setAddonLoading(plan_cycle);
+    try {
+      const token = await getAccessToken();
+      if (!token) throw new Error("Sessão expirada.");
+      const res = await fetch(`/api/checkout/extra-bank?plan_cycle=${plan_cycle}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(extractApiError(body, "Erro ao iniciar pagamento."));
+      if (body.checkout_url) window.location.href = body.checkout_url;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Erro ao iniciar pagamento.";
+      toast.error(msg);
+    } finally {
+      setAddonLoading(null);
+    }
+  };
 
   const loadConnections = useCallback(async () => {
     if (!isPremium || !userId) return;
@@ -214,7 +239,11 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
       widgetRef.current.init();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Erro ao abrir o widget.";
-      toast.error(msg);
+      if (msg === "__extra_bank__") {
+        setShowAddonPrompt(true);
+      } else {
+        toast.error(msg);
+      }
       setIsConnecting(false);
     }
   };
@@ -350,19 +379,55 @@ export function BankConnectionsCard({ userId, isPremium, onRequestPremium }: Ban
                 </div>
               )}
 
+              {/* Extra-bank add-on prompt */}
+              {showAddonPrompt && (
+                <div className="rounded-lg border border-amber-400/30 bg-amber-400/5 p-3 space-y-2">
+                  <p className="text-xs font-semibold text-amber-400">Banco Adicional necessário</p>
+                  <p className="text-xs text-muted-foreground">Para conectar o 2º banco, assine o add-on:</p>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 h-8 text-xs border-amber-400/40 hover:bg-amber-400/10 hover:text-amber-400"
+                      disabled={addonLoading !== null}
+                      onClick={() => handleExtraBankCheckout("monthly")}
+                    >
+                      {addonLoading === "monthly" ? <Loader2 className="h-3 w-3 animate-spin" /> : "Mensal R$ 7,99/mês"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 h-8 text-xs border-amber-400/40 hover:bg-amber-400/10 hover:text-amber-400"
+                      disabled={addonLoading !== null}
+                      onClick={() => handleExtraBankCheckout("yearly")}
+                    >
+                      {addonLoading === "yearly" ? <Loader2 className="h-3 w-3 animate-spin" /> : "Anual R$ 95,88/ano"}
+                    </Button>
+                  </div>
+                  <button
+                    className="text-[10px] text-muted-foreground/60 hover:text-muted-foreground w-full text-center"
+                    onClick={() => setShowAddonPrompt(false)}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              )}
+
               {/* Connect bank button — Pluggy Widget */}
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full h-9 rounded-lg text-xs gap-2 border-dashed border-amber-400/30 hover:border-amber-400/60 hover:bg-amber-400/5 hover:text-amber-400 transition-colors"
-                onClick={handleConnectBank}
-                disabled={isConnecting || activeConnections.length >= 2}
-              >
-                {isConnecting
-                  ? <><Loader2 className="h-4 w-4 animate-spin" />Abrindo widget...</>
-                  : <><Plus className="h-4 w-4" />Conectar novo banco</>
-                }
-              </Button>
+              {!showAddonPrompt && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full h-9 rounded-lg text-xs gap-2 border-dashed border-amber-400/30 hover:border-amber-400/60 hover:bg-amber-400/5 hover:text-amber-400 transition-colors"
+                  onClick={handleConnectBank}
+                  disabled={isConnecting || activeConnections.length >= 2}
+                >
+                  {isConnecting
+                    ? <><Loader2 className="h-4 w-4 animate-spin" />Abrindo widget...</>
+                    : <><Plus className="h-4 w-4" />Conectar novo banco</>
+                  }
+                </Button>
+              )}
 
               {activeConnections.length >= 2 && (
                 <p className="text-[10px] text-destructive/80 text-center">
